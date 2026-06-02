@@ -1,0 +1,31 @@
+[plugin]
+enabled = true
+config_version = "1.1.0"
+
+[trigger]
+# 发送纯 🦌 时记录一次鹿管
+deer_pipe_record_words = "🦌,鹿,123"
+# 排行榜命令触发词
+deer_pipe_rank_words = "鹿王"
+# 个人统计查询触发词
+deer_pipe_personal_words = "我的鹿管"
+# 月表命令前缀（后接月份数字，例如 "6月鹿表"）
+deer_pipe_month_words = "月鹿表"
+deer_pipe_monthly_words = "月鹿表"
+
+[rate_limit]
+# 每次记录之间的冷却时间（分钟）
+cooldown_minutes = 0
+# 超出限频时的回复内容
+exceed_reply = "注意身体，歇会儿吧！"
+
+[group_filter]
+# 白名单模式：只有列表中的群号才会被记录
+# 留空表示允许所有群
+allowed_groups = []
+
+[retention]
+# 数据保留月数（超过此月数的旧数据会被清理）
+months = 2
+# 是否在加载时自动清理旧数据
+auto_cleanup = true

@@ -1,0 +1,28 @@
+# 运行时数据
+data/
+chart_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# 环境
+.env
+.env.local
+
+# 系统
+.DS_Store
+Thumbs.db
+
+#claude
+.claude/
+.reasonix/
+.vscode/
+distributed-fluttering-flamingo.md
+gemini-code-1780409074873.html
+gril-meSKILL.md
