@@ -4,13 +4,17 @@ config_version = "1.1.0"
 
 [trigger]
 # 发送纯 🦌 时记录一次鹿管
-deer_pipe_record_words = ""
+deer_pipe_record_words = "🦌"
 # 排行榜命令触发词
 deer_pipe_rank_words = "鹿王"
 # 个人统计查询触发词
 deer_pipe_personal_words = "我的鹿管"
 # 月表命令基础词（匹配 上月{词}/本月{词}/{词} N月 三种格式）
 deer_pipe_monthly_words = "鹿表"
+enable_record = true
+enable_rank = true
+enable_personal = true
+enable_monthly = true
 
 [rate_limit]
 # 每次记录之间的冷却时间（分钟）
