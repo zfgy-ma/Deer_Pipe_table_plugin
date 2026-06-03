@@ -16,6 +16,12 @@ enable_rank = true
 enable_personal = true
 enable_monthly = true
 
+[dark_mode]
+# 夜间模式开关（true=开启，false=关闭），默认值：true 21-7
+dark_mode = true
+dark_start = 21
+dark_end = 7
+
 [rate_limit]
 # 每次记录之间的冷却时间（分钟）
 cooldown_minutes = 24

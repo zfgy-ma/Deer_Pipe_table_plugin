@@ -55,7 +55,7 @@ class PluginSectionConfig(PluginConfigBase):
 
 
 class TriggerConfig(PluginConfigBase):
-    """触发词与功能开关配置 鹿管记录功能 排行榜查询功能 个人统计查询功能 月度图表查询功能"""
+    """触发词与功能开关配置 鹿管记录功能 排行榜查询功能 个人统计查询功能 月度图表查询功能(为空使用默认值)"""
 
     __ui_label__ = "触发词"
     __ui_order__ = 1
@@ -73,11 +73,22 @@ class TriggerConfig(PluginConfigBase):
     deer_pipe_monthly_words: str = Field(default="🦌表", description="月度图表基础词（单一值）")
 
 
+class DarkModeConfig(PluginConfigBase):
+    """夜间模式配置"""
+
+    __ui_label__ = "夜间模式"
+    __ui_order__ = 2
+
+    dark_mode: bool = Field(default=True, description="开启夜间模式（21:00-07:00 自动切换为暗色主题）")
+    dark_start: int = Field(default=21, description="夜间模式开始时间（小时，0-23）")
+    dark_end: int = Field(default=7, description="夜间模式结束时间（小时，0-23）")
+
+
 class RateLimitConfig(PluginConfigBase):
     """限频配置：每次记录的冷却时间（分钟） 超限时的回复内容"""
 
     __ui_label__ = "限频"
-    __ui_order__ = 2
+    __ui_order__ = 3
 
     cooldown_minutes: int = Field(default=24, description="每次记录的冷却时间（分钟）")
     exceed_reply: str = Field(default="注意身体，歇会儿吧！", description="超限时的回复内容")
@@ -87,7 +98,7 @@ class RetentionConfig(PluginConfigBase):
     """数据保留配置：数据保留月数 是否在加载时自动清理过期数据"""
 
     __ui_label__ = "数据保留"
-    __ui_order__ = 3
+    __ui_order__ = 4
 
     months: int = Field(default=2, description="数据保留月数")
     auto_cleanup: bool = Field(default=True, description="是否在加载时自动清理过期数据")
@@ -98,7 +109,7 @@ class GroupFilterConfig(PluginConfigBase):
 
     __ui_label__ = "群过滤"
     __ui_icon__ = "users"
-    __ui_order__ = 4
+    __ui_order__ = 5
 
     allowed_groups: list[str] = Field(default_factory=list, description="白名单群号列表，留空表示允许所有群")
 
@@ -108,6 +119,7 @@ class DeerPluginConfig(PluginConfigBase):
 
     plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
     trigger: TriggerConfig = Field(default_factory=TriggerConfig)
+    dark_mode: DarkModeConfig = Field(default_factory=DarkModeConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     group_filter: GroupFilterConfig = Field(default_factory=GroupFilterConfig)
@@ -260,7 +272,7 @@ class DeerRankCommand(BaseCommand):
         total_count = sum(d["count"] for _, d in sorted_users)
 
         try:
-            html = chart_template.build_deer_pipe_rank_chart(month_key, sorted_users, total_count)
+            html = chart_template.build_deer_pipe_rank_chart(month_key, sorted_users, total_count, is_dark=self.plugin._is_dark_mode())
             result = await self.plugin.ctx.render.html2png(
                 html=html,
                 selector="#chart-container",
@@ -639,6 +651,18 @@ class DeerPipeTablePlugin(MaiBotPlugin):
 
     # ===== Command 委托方法 =====
 
+    def _is_dark_mode(self) -> bool:
+        """判断当前是否应使用夜间模式。"""
+        if not self.config.dark_mode.dark_mode:
+            return False
+        now = datetime.now()
+        start = self.config.dark_mode.dark_start
+        end = self.config.dark_mode.dark_end
+        if start > end:
+            # 跨天区间（如 21:00-07:00）
+            return now.hour >= start or now.hour < end
+        return start <= now.hour < end
+
     def _ensure_trigger_default(self, field_name: str, default_value: str) -> str:
         """确保触发词配置项有值。为空时返回预设默认值。"""
         value = getattr(self.config.trigger, field_name, "").strip()
@@ -700,7 +724,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             except ValueError:
                 pass
 
-        html = chart_template.build_personal_heatmap(month_key, nickname, user_count, day_counts)
+        html = chart_template.build_personal_heatmap(month_key, nickname, user_count, day_counts, is_dark=self._is_dark_mode())
         result = await self.ctx.render.html2png(
             html=html,
             selector="#chart-container",
@@ -886,7 +910,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             streak = self._get_streak(stream_id, user_id)
 
             lines = [
-                f"📊 {user_data['nickname']} 本月鹿管统计",
+                f"📊 {user_data['nickname']} 本月🦌管统计",
                 f"🦌 鹿管次数：{user_data['count']} 次",
                 f"🏅 排名：第 {rank} 名（共 {len(stats)} 人）",
                 f"🔥 最长连续打卡：{streak} 天",
@@ -948,6 +972,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             html = chart_template.build_full_report(
                 month_key, stats, group_id, hourly, best_day,
                 streak_king_name, streak_king_count, all_time_sorted,
+                is_dark=self._is_dark_mode(),
             )
             result = await self.ctx.render.html2png(
                 html=html,

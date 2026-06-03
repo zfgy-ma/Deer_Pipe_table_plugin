@@ -15,7 +15,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 
-def build_personal_heatmap(month_key: str, user_nickname: str, user_count: int, day_counts: dict) -> str:
+def build_personal_heatmap(month_key: str, user_nickname: str, user_count: int, day_counts: dict, is_dark: bool = False) -> str:
     """构建个人月度活跃热力图 HTML（含本周回顾模块）。
 
     Args:
@@ -104,11 +104,11 @@ body {{
 .date-item {{ flex:1; height:56px; border-radius:10px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:3px; }}
 .date-item .day-name {{ font-size:12px; font-weight:500; color:rgba(255,255,255,0.85); }}
 .count-0 {{ background-color:#f3f4f6; }} .count-0 .day-name {{ color:#9ca3af; }} .count-0 .bold-white-text {{ color:#9ca3af; text-shadow:none; }}
-.count-1 {{ background-color:#a3e635; }}
-.count-2 {{ background-color:#4ade80; }}
-.count-3 {{ background-color:#22c55e; }}
-.count-4 {{ background-color:#16a34a; }}
-.count-max {{ background-color:#15803d; }}
+.count-1 {{ background-color:#fef9c3; }} .count-1 .day-name {{ color:#92400e; }} .count-1 .bold-white-text {{ color:#333333; text-shadow:none; }}
+.count-2 {{ background-color:#fde68a; }} .count-2 .day-name {{ color:#92400e; }} .count-2 .bold-white-text {{ color:#333333; text-shadow:none; }}
+.count-3 {{ background-color:#fb923c; }}
+.count-4 {{ background-color:#ef4444; }}
+.count-max {{ background-color:#b91c1c; }}
 /* 本月足迹 */
 .heatmap-section {{ display:flex; flex-direction:column; align-items:center; gap:12px; width:100%; }}
 .heatmap-month-title {{ font-size:15px; font-weight:700; color:#333; }}
@@ -125,25 +125,40 @@ body {{
     text-shadow:0 1px 2px rgba(0,0,0,0.1);
 }}
 .level-0 {{ background-color:#f3f4f6; }} .level-0 .date-label {{ color:#9ca3af; }}
-.level-1 {{ background-color:#a3e635; }} .level-1 .date-label {{ color:#3f6212; }}
-.level-2 {{ background-color:#4ade80; }} .level-2 .date-label {{ color:#14532d; }}
-.level-3 {{ background-color:#22c55e; }} .level-3 .date-label {{ color:rgba(255,255,255,0.85); }}
-.level-4 {{ background-color:#16a34a; }} .level-4 .date-label {{ color:rgba(255,255,255,0.85); }}
-.level-5 {{ background-color:#15803d; }} .level-5 .date-label {{ color:rgba(255,255,255,0.85); }}
+.level-1 {{ background-color:#fef9c3; }} .level-1 .date-label {{ color:#92400e; }}
+.level-2 {{ background-color:#fde68a; }} .level-2 .date-label {{ color:#92400e; }}
+.level-3 {{ background-color:#fb923c; }} .level-3 .date-label {{ color:rgba(255,255,255,0.85); }}
+.level-4 {{ background-color:#ef4444; }} .level-4 .date-label {{ color:rgba(255,255,255,0.85); }}
+.level-5 {{ background-color:#b91c1c; }} .level-5 .date-label {{ color:rgba(255,255,255,0.85); }}
 .heatmap-cell.empty {{ background-color:transparent; }}
 .legend-container {{ display:flex; align-items:center; font-size:13px; color:#8c8c8c; gap:12px; margin-top:4px; }}
 .legend-squares {{ display:flex; gap:6px; }}
 .legend-square {{ width:18px; height:18px; border-radius:4px; }}
 .count-footer {{ text-align:center; }}
 .count-footer span {{ font-size:14px; color:#8c8c8c; }}
-.count-footer .count-num {{ font-size:20px; font-weight:800; color:#16a34a; }}
+.count-footer .count-num {{ font-size:20px; font-weight:800; color:#ef4444; }}
+body.dark {{ background:#1D1D1D; color:#e5e5e5; }}
+body.dark .container {{ background:#2a2a2a; border-color:#3d3d3d; box-shadow:0 10px 40px rgba(0,0,0,0.3); }}
+body.dark .header h1, body.dark .header h2, body.dark .heatmap-month-title {{ color:#e5e5e5; }}
+body.dark .header p, body.dark .weekday-label, body.dark .date-list-title {{ color:#a0a0a0; }}
+body.dark .level-0 {{ background-color:#333333; }} body.dark .level-0 .date-label {{ color:#999999; }}
+body.dark .count-0 {{ background-color:#333333; }} body.dark .count-0 .day-name {{ color:#888888; }} body.dark .count-0 .bold-white-text {{ color:#888888; text-shadow:none; }}
+body.dark .stat-card {{ background:#2a2a2a; border-color:#3d3d3d; }}
+body.dark .stat-card .value {{ color:#e5e5e5; }}
+body.dark .alltime-table th, body.dark .alltime-table td {{ border-color:#3d3d3d; color:#e5e5e5; }}
+body.dark .section-title {{ color:#e5e5e5; border-color:#3d3d3d; }}
+body.dark .count-footer span, body.dark .legend-container {{ color:#a0a0a0; }}
+body.dark .bar-track {{ background:#3d3d3d; }}
+body.dark .bar-stat, body.dark .bar-name, body.dark .bar-label {{ color:#e5e5e5; }}
+body.dark .bar-stat-days, body.dark .footer {{ color:#a0a0a0; }}
+body.dark .heatmap-cell.empty {{ background-color:transparent; }}
 </style>
 </head>
-<body>
+<body{' class="dark"' if is_dark else ''}>
 <div id="chart-container">
 <div class="container">
 <div class="header">
-    <h2>{user_nickname} 的本月鹿管足迹</h2>
+    <h2>🦌{user_nickname} 的本月鹿管足迹</h2>
     <p>{year}年{month}月</p>
 </div>
 <div class="date-list-header">
@@ -175,7 +190,7 @@ body {{
 </body>
 </html>"""
 
-def build_deer_pipe_rank_chart(month_key: str, sorted_users: list, total: int) -> str:
+def build_deer_pipe_rank_chart(month_key: str, sorted_users: list, total: int, is_dark: bool = False) -> str:
     """构建鹿王排行榜柱状图 HTML。
 
     Args:
@@ -189,8 +204,8 @@ def build_deer_pipe_rank_chart(month_key: str, sorted_users: list, total: int) -
 
     bar_rows = ""
     colors = [
-        "#15803d", "#16a34a", "#22c55e", "#4ade80", "#a3e635",
-        "#84cc16", "#65a30d", "#4d7c0f", "#3f6212", "#365314",
+        "#b91c1c", "#c13228", "#c84934", "#d05f41", "#d7764d",
+        "#df8c59", "#e6a365", "#eeb971", "#f6d07e", "#fde68a",
     ]
     medals = ["🥇", "🥈", "🥉", "4", "5", "6", "7", "8", "9", "10"]
     for i, (_uid, data) in enumerate(top10):
@@ -236,9 +251,24 @@ body {{
 .bar-stat {{ width:44px; font-size:13px; font-weight:600; color:#333; flex-shrink:0; text-align:right; }}
 .bar-stat-days {{ width:36px; font-size:11px; color:#9ca3af; flex-shrink:0; text-align:right; }}
 .footer {{ text-align:center; margin-top:24px; font-size:13px; color:#8c8c8c; }}
+body.dark {{ background:#1D1D1D; color:#e5e5e5; }}
+body.dark .container {{ background:#2a2a2a; border-color:#3d3d3d; box-shadow:0 10px 40px rgba(0,0,0,0.3); }}
+body.dark .header h1, body.dark .header h2, body.dark .heatmap-month-title {{ color:#e5e5e5; }}
+body.dark .header p, body.dark .weekday-label, body.dark .date-list-title {{ color:#a0a0a0; }}
+body.dark .level-0 {{ background-color:#333333; }} body.dark .level-0 .date-label {{ color:#999999; }}
+body.dark .count-0 {{ background-color:#333333; }} body.dark .count-0 .day-name {{ color:#888888; }} body.dark .count-0 .bold-white-text {{ color:#888888; text-shadow:none; }}
+body.dark .stat-card {{ background:#2a2a2a; border-color:#3d3d3d; }}
+body.dark .stat-card .value {{ color:#e5e5e5; }}
+body.dark .alltime-table th, body.dark .alltime-table td {{ border-color:#3d3d3d; color:#e5e5e5; }}
+body.dark .section-title {{ color:#e5e5e5; border-color:#3d3d3d; }}
+body.dark .count-footer span, body.dark .legend-container {{ color:#a0a0a0; }}
+body.dark .bar-track {{ background:#3d3d3d; }}
+body.dark .bar-stat, body.dark .bar-name, body.dark .bar-label {{ color:#e5e5e5; }}
+body.dark .bar-stat-days, body.dark .footer {{ color:#a0a0a0; }}
+body.dark .heatmap-cell.empty {{ background-color:transparent; }}
 </style>
 </head>
-<body>
+<body{' class="dark"' if is_dark else ''}>
 <div id="chart-container">
 <div class="container">
 <div class="header">
@@ -262,6 +292,7 @@ def build_full_report(
     streak_king_name: str,
     streak_king_count: int,
     all_time_sorted: list,
+    is_dark: bool = False,
 ) -> str:
     """构建月度完整报告 HTML（X月鹿表用）。
 
@@ -317,8 +348,8 @@ def build_full_report(
 
     # 柱状图
     bar_colors = [
-        "#15803d", "#16a34a", "#22c55e", "#4ade80", "#a3e635",
-        "#84cc16", "#65a30d", "#4d7c0f", "#3f6212", "#365314",
+        "#b91c1c", "#c13228", "#c84934", "#d05f41", "#d7764d",
+        "#df8c59", "#e6a365", "#eeb971", "#f6d07e", "#fde68a",
     ]
     bar_rows = ""
     for i, (_uid, data) in enumerate(top10):
@@ -371,11 +402,11 @@ body {{
 .date-label {{ position:absolute; top:4px; left:5px; font-size:11px; font-weight:600; line-height:1; }}
 .bold-white-text {{ font-size:18px; font-weight:800; color:#fff; line-height:1; text-shadow:0 1px 2px rgba(0,0,0,0.1); }}
 .level-0 {{ background-color:#f3f4f6; }} .level-0 .date-label {{ color:#9ca3af; }}
-.level-1 {{ background-color:#a3e635; }} .level-1 .date-label {{ color:#3f6212; }}
-.level-2 {{ background-color:#4ade80; }} .level-2 .date-label {{ color:#14532d; }}
-.level-3 {{ background-color:#22c55e; }} .level-3 .date-label {{ color:rgba(255,255,255,0.85); }}
-.level-4 {{ background-color:#16a34a; }} .level-4 .date-label {{ color:rgba(255,255,255,0.85); }}
-.level-5 {{ background-color:#15803d; }} .level-5 .date-label {{ color:rgba(255,255,255,0.85); }}
+.level-1 {{ background-color:#fef9c3; }} .level-1 .date-label {{ color:#92400e; }}
+.level-2 {{ background-color:#fde68a; }} .level-2 .date-label {{ color:#92400e; }}
+.level-3 {{ background-color:#fb923c; }} .level-3 .date-label {{ color:rgba(255,255,255,0.85); }}
+.level-4 {{ background-color:#ef4444; }} .level-4 .date-label {{ color:rgba(255,255,255,0.85); }}
+.level-5 {{ background-color:#b91c1c; }} .level-5 .date-label {{ color:rgba(255,255,255,0.85); }}
 .heatmap-cell.empty {{ background-color:transparent; }}
 /* 柱状图 */
 .bar-row {{ display:flex; align-items:center; margin:6px 0; gap:8px; }}
@@ -396,9 +427,24 @@ body {{
 .legend-squares {{ display:flex; gap:6px; }}
 .legend-square {{ width:18px; height:18px; border-radius:4px; }}
 .weekday-row {{ display:grid; grid-template-columns:repeat(7,48px); gap:10px; text-align:center; margin-bottom:4px; justify-content:center; }}
+body.dark {{ background:#1D1D1D; color:#e5e5e5; }}
+body.dark .container {{ background:#2a2a2a; border-color:#3d3d3d; box-shadow:0 10px 40px rgba(0,0,0,0.3); }}
+body.dark .header h1, body.dark .header h2, body.dark .heatmap-month-title {{ color:#e5e5e5; }}
+body.dark .header p, body.dark .weekday-label, body.dark .date-list-title {{ color:#a0a0a0; }}
+body.dark .level-0 {{ background-color:#333333; }} body.dark .level-0 .date-label {{ color:#999999; }}
+body.dark .count-0 {{ background-color:#333333; }} body.dark .count-0 .day-name {{ color:#888888; }} body.dark .count-0 .bold-white-text {{ color:#888888; text-shadow:none; }}
+body.dark .stat-card {{ background:#2a2a2a; border-color:#3d3d3d; }}
+body.dark .stat-card .value {{ color:#e5e5e5; }}
+body.dark .alltime-table th, body.dark .alltime-table td {{ border-color:#3d3d3d; color:#e5e5e5; }}
+body.dark .section-title {{ color:#e5e5e5; border-color:#3d3d3d; }}
+body.dark .count-footer span, body.dark .legend-container {{ color:#a0a0a0; }}
+body.dark .bar-track {{ background:#3d3d3d; }}
+body.dark .bar-stat, body.dark .bar-name, body.dark .bar-label {{ color:#e5e5e5; }}
+body.dark .bar-stat-days, body.dark .footer {{ color:#a0a0a0; }}
+body.dark .heatmap-cell.empty {{ background-color:transparent; }}
 </style>
 </head>
-<body>
+<body{' class="dark"' if is_dark else ''}>
 <div id="chart-container">
 <div class="header">
     <h1>🦌 {month_key} 月度鹿管报告</h1>
