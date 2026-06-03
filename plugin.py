@@ -48,7 +48,6 @@ class PluginSectionConfig(PluginConfigBase):
     """插件开关配置"""
 
     __ui_label__ = "插件"
-    __ui_icon__ = "package"
     __ui_order__ = 0
 
     enabled: bool = Field(default=False, description="是否启用插件")
@@ -56,30 +55,28 @@ class PluginSectionConfig(PluginConfigBase):
 
 
 class TriggerConfig(PluginConfigBase):
-    """触发词与功能开关配置。"""
+    """触发词与功能开关配置 鹿管记录功能 排行榜查询功能 个人统计查询功能 月度图表查询功能"""
 
     __ui_label__ = "触发词"
-    __ui_icon__ = "zap"
     __ui_order__ = 1
 
     enable_record: bool = Field(default=True, description="启用鹿管记录功能")
     deer_pipe_record_words: str = Field(default="🦌", description="鹿管记录触发词（单一值）")
 
     enable_rank: bool = Field(default=True, description="启用排行榜查询功能")
-    deer_pipe_rank_words: str = Field(default="鹿王", description="排行榜查询触发词（单一值）")
+    deer_pipe_rank_words: str = Field(default="🦌排行", description="排行榜查询触发词（单一值）")
 
     enable_personal: bool = Field(default=True, description="启用个人统计查询功能")
-    deer_pipe_personal_words: str = Field(default="我的鹿管", description="个人统计查询触发词（单一值）")
+    deer_pipe_personal_words: str = Field(default="我的🦌", description="个人统计查询触发词（单一值）")
 
     enable_monthly: bool = Field(default=True, description="启用月度图表查询功能")
-    deer_pipe_monthly_words: str = Field(default="鹿表", description="月度图表基础词（单一值）")
+    deer_pipe_monthly_words: str = Field(default="🦌表", description="月度图表基础词（单一值）")
 
 
 class RateLimitConfig(PluginConfigBase):
     """限频配置：每次记录的冷却时间（分钟） 超限时的回复内容"""
 
     __ui_label__ = "限频"
-    __ui_icon__ = "clock"
     __ui_order__ = 2
 
     cooldown_minutes: int = Field(default=24, description="每次记录的冷却时间（分钟）")
@@ -90,7 +87,6 @@ class RetentionConfig(PluginConfigBase):
     """数据保留配置：数据保留月数 是否在加载时自动清理过期数据"""
 
     __ui_label__ = "数据保留"
-    __ui_icon__ = "archive"
     __ui_order__ = 3
 
     months: int = Field(default=2, description="数据保留月数")
@@ -130,9 +126,9 @@ if os.path.exists(_DEFAULT_CONFIG_PATH):
 
 # 从配置文件读取各命令的单一触发词，为空时使用硬编码默认值
 _record_trigger = _default_trigger.get("deer_pipe_record_words", "") or "🦌"
-_rank_trigger = _default_trigger.get("deer_pipe_rank_words", "") or "鹿王"
-_personal_trigger = _default_trigger.get("deer_pipe_personal_words", "") or "我的鹿管"
-_monthly_trigger = _default_trigger.get("deer_pipe_monthly_words", "") or "鹿表"
+_rank_trigger = _default_trigger.get("deer_pipe_rank_words", "") or "🦌排行"
+_personal_trigger = _default_trigger.get("deer_pipe_personal_words", "") or "我的🦌"
+_monthly_trigger = _default_trigger.get("deer_pipe_monthly_words", "") or "🦌表"
 
 # 各命令的正则 pattern（全量匹配，锚定 ^$）
 _record_pattern = rf"^{re.escape(_record_trigger)}$"
@@ -241,7 +237,7 @@ class DeerRankCommand(BaseCommand):
             return False, None, 0
 
         # 确保触发词有值
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_rank_words", "鹿王")
+        trigger = self.plugin._ensure_trigger_default("deer_pipe_rank_words", "上")
 
         # 全量匹配
         raw_text = str(self.kwargs.get("text") or "").strip()
@@ -309,7 +305,7 @@ class DeerPersonalCommand(BaseCommand):
             return False, None, 0
 
         # 确保触发词有值
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_personal_words", "我的鹿管")
+        trigger = self.plugin._ensure_trigger_default("deer_pipe_personal_words", "上")
 
         # 全量匹配
         raw_text = str(self.kwargs.get("text") or "").strip()
@@ -375,7 +371,7 @@ class DeerMonthlyCommand(BaseCommand):
             return False, None, 0
 
         # 确保触发词有值
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_monthly_words", "鹿表")
+        trigger = self.plugin._ensure_trigger_default("deer_pipe_monthly_words", "上")
 
         raw_text = str(self.kwargs.get("text") or "").strip()
 
@@ -643,27 +639,9 @@ class DeerPipeTablePlugin(MaiBotPlugin):
     # ===== Command 委托方法 =====
 
     def _ensure_trigger_default(self, field_name: str, default_value: str) -> str:
-        """确保触发词配置项有值。为空时自动将默认值写回 config.toml。"""
+        """确保触发词配置项有值。为空时返回预设默认值。"""
         value = getattr(self.config.trigger, field_name, "").strip()
-        if value:
-            return value
-        # 写回默认值到 config.toml
-        config_path = os.path.join(PLUGIN_DIR, "config.toml")
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            new_content = re.sub(
-                rf'({field_name}\s*=\s*)"\s*"',
-                rf'\1"{default_value}"',
-                content,
-            )
-            if new_content != content:
-                with open(config_path, "w", encoding="utf-8") as f:
-                    f.write(new_content)
-                self.ctx.logger.info(f"已修复空配置项 {field_name} → {default_value}")
-        except Exception as e:
-            self.ctx.logger.warning(f"修复配置项 {field_name} 失败: {e}")
-        return default_value
+        return value if value else default_value
 
     async def handle_record(self, stream_id: str = "", **kwargs: Any) -> Any:
         cmd = DeerRecordCommand(plugin=self, **kwargs)

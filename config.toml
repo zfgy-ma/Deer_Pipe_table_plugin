@@ -3,14 +3,14 @@ enabled = true
 config_version = "1.1.0"
 
 [trigger]
-# 发送纯 🦌 时记录一次鹿管
+# 发送纯 🦌 时记录一次鹿管 默认值：🦌
 deer_pipe_record_words = "🦌"
-# 排行榜命令触发词
-deer_pipe_rank_words = "鹿王"
-# 个人统计查询触发词
-deer_pipe_personal_words = "我的鹿管"
-# 月表命令基础词（匹配 上月{词}/本月{词}/{词} N月 三种格式）
-deer_pipe_monthly_words = "鹿表"
+# 排行榜命令触发词 默认值:🦌排名
+deer_pipe_rank_words = "🦌排名"
+# 个人统计查询触发词 默认值：我的🦌
+deer_pipe_personal_words = "我的🦌"
+# 月表命令基础词（匹配 上月{词}/本月{词}/{词} N月 三种格式） 默认值:🦌表
+deer_pipe_monthly_words = "🦌表"
 enable_record = true
 enable_rank = true
 enable_personal = true
