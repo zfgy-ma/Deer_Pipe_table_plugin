@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import tomllib
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
@@ -117,6 +118,41 @@ def _get_first_trigger(trigger_str: str) -> str:
     """获取第一个触发词（用于提示消息中的软编码）。"""
     triggers = _parse_triggers(trigger_str)
     return triggers[0] if triggers else trigger_str
+
+# 模块级默认配置预读（供 @Command 装饰器使用，热重载后需重启插件生效）
+_DEFAULT_CONFIG_PATH = os.path.join(PLUGIN_DIR, "config.toml")
+_default_trigger: dict[str, str] = {}
+if os.path.exists(_DEFAULT_CONFIG_PATH):
+    try:
+        with open(_DEFAULT_CONFIG_PATH, "rb") as _f:
+            _raw = tomllib.load(_f)
+        _default_trigger = _raw.get("trigger", {})
+    except Exception:
+        pass
+
+# 预解析各命令的触发词列表
+_record_words = _parse_triggers(_default_trigger.get("deer_pipe_record_words", "🦌"))
+_rank_words = _parse_triggers(_default_trigger.get("deer_pipe_rank_words", "鹿王"))
+_personal_words = _parse_triggers(_default_trigger.get("deer_pipe_personal_words", "我的鹿管"))
+_monthly_words = _parse_triggers(_default_trigger.get("deer_pipe_monthly_words", "鹿表"))
+_monthly_base_word = _monthly_words[0] if _monthly_words else "鹿表"
+
+# 各命令的 pattern 与 aliases（首触发词 → pattern，其余 → aliases）
+_record_pattern = rf"^{re.escape(_record_words[0])}$" if _record_words else r"^🦌$"
+_record_aliases = _record_words[1:] if len(_record_words) > 1 else None
+
+_rank_pattern = rf"^{re.escape(_rank_words[0])}$" if _rank_words else r"^鹿王$"
+_rank_aliases = _rank_words[1:] if len(_rank_words) > 1 else None
+
+_personal_pattern = rf"^{re.escape(_personal_words[0])}$" if _personal_words else r"^我的鹿管$"
+_personal_aliases = _personal_words[1:] if len(_personal_words) > 1 else None
+
+# 月度图表匹配：上月{base}、本月{base}、{base} N月
+_monthly_pattern = (
+    rf"^(?:上月{re.escape(_monthly_base_word)}"
+    rf"|本月{re.escape(_monthly_base_word)}"
+    rf"|{re.escape(_monthly_base_word)}\s*(?P<m>\d{{1,2}})月)$"
+)
 
 # ===== 鹿管插件主类 =====
 
@@ -331,60 +367,25 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             except OSError:
                 continue
 
-    # ===== @Command — 统一消息路由器 =====
+    # ===== @Command — 鹿管记录 =====
 
     @Command(
-        "deer_message_router",
-        description="统一消息路由器：按触发词分发到鹿管记录、排行榜或个人统计，支持逗号多匹配",
-        pattern=r"^.+$",
+        "deer_pipe_record",
+        description="记录一次鹿管并发送个人热力图",
+        pattern=_record_pattern,
+        aliases=_record_aliases,
     )
-    async def handle_message_router(self, stream_id: str = "", **kwargs: Any) -> Any:
-        """根据配置的触发词将消息路由到对应的处理器。"""
-
+    async def handle_record(self, stream_id: str = "", **kwargs: Any) -> Any:
+        """记录一次鹿管，限频检查通过后发送个人热力图（hybrid 混合消息）。"""
         if not stream_id:
             return False, "无法获取聊天流信息", 0
 
-        raw_text = str(kwargs.get("text") or "").strip()
-        if not raw_text:
-            return False, "", 0
-
-        # 提取用户信息（统一从 kwargs 获取）
         user_id = str(kwargs.get("user_id") or "")
         message_dict = kwargs.get("message") or {}
         nickname = str(
             (message_dict.get("message_info") or {}).get("user_info", {}).get("user_nickname", "")
         ) or (f"用户{user_id[-4:]}" if user_id else "未知")
 
-        # 1. 鹿管记录触发词
-        record_triggers = _parse_triggers(self.config.trigger.deer_pipe_record_words)
-        if raw_text in record_triggers:
-            return await self._route_deer_record(stream_id, user_id, nickname)
-
-        # 2. 排行榜触发词
-        rank_triggers = _parse_triggers(self.config.trigger.deer_pipe_rank_words)
-        if raw_text in rank_triggers:
-            return await self._route_deer_pipe_rank(stream_id)
-
-        # 3. 个人统计触发词
-        personal_triggers = _parse_triggers(self.config.trigger.deer_pipe_personal_words)
-        if raw_text in personal_triggers:
-            return await self._route_personal(stream_id, user_id, nickname)
-
-        # 4. 月度图表触发词
-        if raw_text == "上月鹿表":
-            now = datetime.now()
-            month_num = now.month - 1 if now.month > 1 else 12
-            return await self._handle_monthly_chart(stream_id, month_num)
-        if raw_text == "本月鹿表":
-            return await self._handle_monthly_chart(stream_id, datetime.now().month)
-        num_match = re.match(r"^(?P<m>\d{1,2})月鹿表$", raw_text)
-        if num_match:
-            return await self._handle_monthly_chart(stream_id, int(num_match.group("m")))
-
-        return False, "", 0
-
-    async def _route_deer_record(self, stream_id: str, user_id: str, nickname: str) -> Any:
-        """鹿管记录子路由。"""
         if not user_id:
             self.ctx.logger.warning("鹿管记录：无法获取发送者 user_id，跳过记录")
             return False, "无法识别用户身份", 0
@@ -394,6 +395,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         if allowed and stream_id not in allowed:
             return True, "非白名单群，已忽略", 2
 
+        # 限频检查 + 记录
         success = self._add_record(stream_id, user_id, nickname)
         if not success:
             cooldown = self.config.rate_limit.cooldown_minutes
@@ -402,53 +404,40 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             )
             return True, "冷却期内拦截", 2
 
-        # 记录成功 → 个人热力图报告
+        # 生成热力图 + 发送 hybrid 混合消息
+        image_base64 = await self._build_personal_heatmap_base64(stream_id, user_id, nickname)
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
         stats = self._get_monthly_stats(stream_id, month_key)
-        user_data = stats.get(user_id, {})
-        user_count = user_data.get("count", 0)
+        user_count = stats.get(user_id, {}).get("count", 0)
 
-        # 计算每日真实次数
-        day_counts: dict[int, int] = {}
-        for ts_str in user_data.get("timestamps", []):
-            try:
-                d = datetime.fromisoformat(ts_str).day
-                day_counts[d] = day_counts.get(d, 0) + 1
-            except ValueError:
-                pass
-
-        try:
-            html = chart_template.build_personal_heatmap(month_key, nickname, user_count, day_counts)
-            week_num = now.isocalendar()[1]
-            result = await self.ctx.render.html2png(
-                html=html,
-                selector="#chart-container",
-                viewport={"width": 620, "height": 520},
-                device_scale_factor=2.0,
-                full_page=True,
-                wait_until="networkidle",
-            )
-            image_base64 = self._extract_base64(result)
-            if image_base64:
-                await self.ctx.send.text(f"记录成功！本月第{user_count}次 🦌", stream_id)
-                await self.ctx.send.image(image_base64, stream_id)
-            else:
-                self.ctx.logger.warning(f"html2png 返回异常: type={type(result).__name__}, keys={list(result.keys()) if isinstance(result, dict) else 'N/A'}")
-                await self.ctx.send.text(f"记录成功！本月第{user_count}次 🦌", stream_id)
-        except Exception:
+        if image_base64:
+            await self.ctx.send.hybrid([
+                {"type": "text", "content": f"记录成功！本月第{user_count}次 🦌"},
+                {"type": "image", "content": image_base64},
+            ], stream_id)
+        else:
             await self.ctx.send.text(f"记录成功！本月第{user_count}次 🦌", stream_id)
 
         return True, "鹿管已记录", 2
 
-    async def _route_deer_pipe_rank(self, stream_id: str) -> Any:
-        """排行榜子路由。"""
+    # ===== @Command — 鹿管排行榜 =====
+
+    @Command(
+        "deer_pipe_rank",
+        description="查询本月鹿管排行榜",
+        pattern=_rank_pattern,
+        aliases=_rank_aliases,
+    )
+    async def handle_rank(self, stream_id: str = "", **kwargs: Any) -> Any:
+        """查询本月鹿管排行榜，优先发送图表，失败时降级为文本。"""
+        del kwargs
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
         stats = self._get_monthly_stats(stream_id, month_key)
 
         if not stats:
-            first_trigger = _get_first_trigger(self.config.trigger.deer_pipe_record_words)
+            first_trigger = _record_words[0] if _record_words else "🦌"
             await self.ctx.send.text(
                 f"本月还没有鹿管记录哦～\n发送 {first_trigger} 来记录吧！", stream_id
             )
@@ -482,29 +471,100 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         await self.ctx.send.text("\n".join(lines), stream_id)
         return True, "已发送排行榜", 2
 
-    async def _route_personal(self, stream_id: str, user_id: str, nickname: str) -> Any:
-        """个人统计子路由。"""
+    # ===== @Command — 个人统计 =====
+
+    @Command(
+        "deer_pipe_personal",
+        description="查询个人鹿管统计，发送热力图",
+        pattern=_personal_pattern,
+        aliases=_personal_aliases,
+    )
+    async def handle_personal(self, stream_id: str = "", **kwargs: Any) -> Any:
+        """查询个人鹿管统计，使用 send.hybrid 发送图文混合消息。"""
+        if not stream_id:
+            return False, "无法获取聊天流信息", 0
+
+        user_id = str(kwargs.get("user_id") or "")
+        message_dict = kwargs.get("message") or {}
+        nickname = str(
+            (message_dict.get("message_info") or {}).get("user_info", {}).get("user_nickname", "")
+        ) or (f"用户{user_id[-4:]}" if user_id else "未知")
+
         if not user_id:
             return False, "无法识别用户身份", 0
-        await self._handle_personal_stats(stream_id, user_id, nickname)
+
+        image_base64 = await self._build_personal_heatmap_base64(stream_id, user_id, nickname)
+        if image_base64:
+            await self.ctx.send.hybrid([
+                {"type": "text", "content": "看看这张图："},
+                {"type": "image", "content": image_base64},
+            ], stream_id)
+        else:
+            now = datetime.now()
+            month_key = now.strftime("%Y-%m")
+            stats = self._get_monthly_stats(stream_id, month_key)
+            user_data = stats.get(user_id)
+            if user_data:
+                await self.ctx.send.text(
+                    f"{nickname} 本月鹿管 {user_data.get('count', 0)} 次（图表生成失败）", stream_id
+                )
+            else:
+                first_trigger = _record_words[0] if _record_words else "🦌"
+                await self.ctx.send.text(
+                    f"{nickname or '你'} 本月还没有鹿管记录哦～\n发送 {first_trigger} 来记录吧！", stream_id
+                )
+
         return True, "已发送个人统计", 2
 
-    # ===== 个人统计（核心逻辑） =====
-    # ===== 个人统计（内部方法，由 EventHandler 路由调用） =====
+    # ===== @Command — 月度图表 =====
 
-    async def _handle_personal_stats(self, stream_id: str, user_id: str, nickname: str) -> None:
-        """处理个人统计查询，生成热力图图片发送。"""
+    @Command(
+        "deer_pipe_monthly",
+        description="查询月度鹿管图表，支持上月/本月/指定月份",
+        pattern=_monthly_pattern,
+        aliases=None,
+    )
+    async def handle_monthly(self, stream_id: str = "", **kwargs: Any) -> Any:
+        """查询月度鹿管图表。支持三种格式：上月{base}、本月{base}、{base} N月。"""
+        if not stream_id:
+            return False, "无法获取聊天流信息", 0
+
+        raw_text = str(kwargs.get("text") or "").strip()
+        matched_groups = kwargs.get("matched_groups") or {}
+
+        now = datetime.now()
+        if raw_text == f"上月{_monthly_base_word}":
+            month_num = now.month - 1 if now.month > 1 else 12
+        elif raw_text == f"本月{_monthly_base_word}":
+            month_num = now.month
+        else:
+            m_str = matched_groups.get("m")
+            if m_str:
+                month_num = int(m_str)
+            else:
+                # 兜底：直接用正则从原始文本中提取月份
+                m = re.match(
+                    rf"^{re.escape(_monthly_base_word)}\s*(?P<m>\d{{1,2}})月$", raw_text
+                )
+                if m:
+                    month_num = int(m.group("m"))
+                else:
+                    return False, "", 0
+
+        return await self._handle_monthly_chart(stream_id, month_num)
+
+    # ===== 共享辅助：个人热力图生成 =====
+
+    async def _build_personal_heatmap_base64(
+        self, stream_id: str, user_id: str, nickname: str
+    ) -> str | None:
+        """生成个人热力图，返回 base64 字符串。合并自原 _route_deer_record 和 _route_personal 的图片生成逻辑。"""
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
         stats = self._get_monthly_stats(stream_id, month_key)
-
         user_data = stats.get(user_id)
         if not user_data:
-            first_trigger = _get_first_trigger(self.config.trigger.deer_pipe_record_words)
-            await self.ctx.send.text(
-                f"{nickname or '你'} 本月还没有鹿管记录哦～\n发送 {first_trigger} 来记录吧！", stream_id
-            )
-            return
+            return None
 
         user_count = user_data.get("count", 0)
         day_counts: dict[int, int] = {}
@@ -515,21 +575,16 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             except ValueError:
                 pass
 
-        try:
-            html = chart_template.build_personal_heatmap(month_key, nickname, user_count, day_counts)
-            result = await self.ctx.render.html2png(
-                html=html,
-                selector="#chart-container",
-                viewport={"width": 620, "height": 520},
-                device_scale_factor=2.0,
-                full_page=True,
-                wait_until="networkidle",
-            )
-            image_base64 = self._extract_base64(result)
-            if image_base64:
-                await self.ctx.send.image(image_base64, stream_id)
-        except Exception:
-            pass
+        html = chart_template.build_personal_heatmap(month_key, nickname, user_count, day_counts)
+        result = await self.ctx.render.html2png(
+            html=html,
+            selector="#chart-container",
+            viewport={"width": 620, "height": 520},
+            device_scale_factor=2.0,
+            full_page=True,
+            wait_until="networkidle",
+        )
+        return self._extract_base64(result)
 
     async def _handle_monthly_chart(self, stream_id: str, month_num: int) -> Any:
         """统一处理月度图表生成与发送。"""
@@ -813,7 +868,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
 
 
 def create_plugin() -> DeerPipeTablePlugin:
-    """创建鹿管插件实例。
+    """创建鹿管插件实例
 
     Returns:
         DeerPipeTablePlugin: 插件实例。

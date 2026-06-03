@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import calendar as _cal
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def build_personal_heatmap(month_key: str, user_nickname: str, user_count: int, day_counts: dict) -> str:
