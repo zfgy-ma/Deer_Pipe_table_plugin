@@ -137,7 +137,8 @@ _personal_pattern = rf"^{re.escape(_personal_trigger)}$"
 _monthly_pattern = (
     rf"^(?:上月{re.escape(_monthly_trigger)}"
     rf"|本月{re.escape(_monthly_trigger)}"
-    rf"|{re.escape(_monthly_trigger)}\s*(?P<m>\d{{1,2}})月)$"
+    rf"|{re.escape(_monthly_trigger)}\s*(?P<m>\d{{1,2}})月"
+    rf"|{re.escape(_monthly_trigger)})$"
 )
 
 # ===== Command 组件类 =====
@@ -371,14 +372,14 @@ class DeerMonthlyCommand(BaseCommand):
             return False, None, 0
 
         # 确保触发词有值
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_monthly_words", "上")
+        trigger = self.plugin._ensure_trigger_default("deer_pipe_monthly_words", "🦌表")
 
         raw_text = str(self.kwargs.get("text") or "").strip()
 
         now = datetime.now()
         if raw_text == f"上月{trigger}":
             month_num = now.month - 1 if now.month > 1 else 12
-        elif raw_text == f"本月{trigger}":
+        elif raw_text == f"本月{trigger}" or raw_text == trigger:
             month_num = now.month
         else:
             m_str = self.matched_groups.get("m")
@@ -726,19 +727,19 @@ class DeerPipeTablePlugin(MaiBotPlugin):
 
         stats = self._get_monthly_stats(stream_id, month_key)
         if not stats:
-            await self.ctx.send.text(f"📊 {month_key} 还没有鹿管记录哦～", stream_id)
+            await self.ctx.send.text(f"📊 {month_key} 还没有🦌管记录哦～", stream_id)
             return True, "指定月份无记录", 2
 
         # 生成图表
         image_base64 = await self._generate_full_report(stream_id, month_key, stats)
         if image_base64:
             await self.ctx.send.image(image_base64, stream_id)
-            return True, f"已发送 {month_key} 鹿管月表", 2
+            return True, f"已发送 {month_key} 🦌管月表", 2
 
         # 图表生成失败时发送文本统计
         sorted_users = sorted(stats.items(), key=lambda x: x[1]["count"], reverse=True)
         total = sum(d["count"] for _, d in sorted_users)
-        lines = [f"📊 {month_key} 鹿管月表", f"🦌 总次数：{total}", "─" * 20]
+        lines = [f"📊 {month_key} 🦌管月表", f"🦌 总次数：{total}", "─" * 20]
         for i, (uid, data) in enumerate(sorted_users[:10], 1):
             lines.append(f"{i}. {data['nickname']}：{data['count']} 次")
         await self.ctx.send.text("\n".join(lines), stream_id)

@@ -18,7 +18,7 @@ enable_monthly = true
 
 [rate_limit]
 # 每次记录之间的冷却时间（分钟）
-cooldown_minutes = 0
+cooldown_minutes = 24
 # 超出限频时的回复内容
 exceed_reply = "注意身体，歇会儿吧！"
 

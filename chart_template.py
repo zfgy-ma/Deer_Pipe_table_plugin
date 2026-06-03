@@ -303,10 +303,10 @@ def build_full_report(
         cells_html += '<div class="heatmap-cell empty"></div>'
     for day in range(1, last_day_num + 1):
         count = day_counts.get(day, 0)
-        level = min(int(count / max(max_day_count, 1) * 5), 5) if count > 0 else 0
+        level = min(count, 5) if count > 0 else 0
         cells_html += f'<div class="heatmap-cell level-{level}">'
         cells_html += f'<span class="date-label">{day}</span>'
-        if count > 5:
+        if count >= 5:
             cells_html += f'<span class="bold-white-text">{count}</span>'
         cells_html += "</div>"
     total_cells = first_weekday + last_day_num
@@ -395,7 +395,7 @@ body {{
 .legend-container {{ display:flex; align-items:center; font-size:13px; color:#8c8c8c; gap:12px; margin-top:4px; }}
 .legend-squares {{ display:flex; gap:6px; }}
 .legend-square {{ width:18px; height:18px; border-radius:4px; }}
-.weekday-row {{ display:grid; grid-template-columns:repeat(7,48px); gap:10px; text-align:center; margin-bottom:4px; }}
+.weekday-row {{ display:grid; grid-template-columns:repeat(7,48px); gap:10px; text-align:center; margin-bottom:4px; justify-content:center; }}
 </style>
 </head>
 <body>
