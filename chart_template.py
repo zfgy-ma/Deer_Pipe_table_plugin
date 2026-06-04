@@ -303,7 +303,7 @@ def build_full_report(
         stats: 月度统计数据，{user_id: {nickname, count, days, timestamps}}。
         group_id: 群标识（用于统计）。
         hourly: 时段分布字典。
-        best_day: (日期, 次数) 单日最高。
+        best_day: (昵称, 日期, 次数) 单日最高。
         streak_king_name: 连续打卡王昵称。
         streak_king_count: 连续打卡王天数。
         all_time_sorted: 历史总榜 [(user_id, {nickname, count, days}), ...]。
@@ -478,7 +478,7 @@ body.dark .heatmap-cell.empty {{ background-color:transparent; }}
     </div>
     <div class="stat-card">
         <div class="value">{best_day[0]}</div>
-        <div class="label">单日最高（{best_day[1]} 次）</div>
+        <div class="label">{best_day[1]} · {best_day[2]} 次</div>
     </div>
     <div class="stat-card">
         <div class="value">{safe_streak_name}</div>

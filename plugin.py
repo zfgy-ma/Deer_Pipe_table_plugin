@@ -64,7 +64,7 @@ class TriggerConfig(PluginConfigBase):
     deer_pipe_record_words: str = Field(default="🦌", description="鹿管记录触发词（单一值）")
 
     enable_rank: bool = Field(default=True, description="启用排行榜查询功能")
-    deer_pipe_rank_words: str = Field(default="🦌排行", description="排行榜查询触发词（单一值）")
+    deer_pipe_rank_words: str = Field(default="🦌排名", description="排行榜查询触发词（单一值）")
 
     enable_personal: bool = Field(default=True, description="启用个人统计查询功能")
     deer_pipe_personal_words: str = Field(default="我的🦌", description="个人统计查询触发词（单一值）")
@@ -549,32 +549,89 @@ class DeerPipeTablePlugin(MaiBotPlugin):
                 all_stats[uid]["days"].update(data["days"])
         return all_stats
 
-    def _get_streak(self, group_id: str, user_id: str) -> int:
-        """计算用户在本月的最长连续打卡天数。"""
+    def _get_streak(self, group_id: str, user_id: str) -> dict:
+        """计算用户在本月的最长连续打卡天数及加赛信息。
+
+        返回 dict:
+            {"days": int,          # 最长连续天数，0 表示无记录
+             "last_day": int,      # 该连续段的最后一天 (1-31)，0 表示无记录
+             "earliest_ts": str | None}  # 该段最后一天的最早打卡时间 (ISO 格式)
+
+        内部加赛规则：同一用户有多段相同长度的最长连续时，
+        取日期最近的那段（最后一天最晚的）。
+        """
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
         records = self._load_records(group_id, month_key)
-        user_days = set()
+
+        # 收集每天所有打卡时间
+        day_timestamps: dict[int, list[datetime]] = {}
         for r in records:
             if r.get("user_id") != user_id:
                 continue
             try:
                 ts = datetime.fromisoformat(r["timestamp"])
-                user_days.add(ts.day)
-            except ValueError:
+                day = ts.day
+                day_timestamps.setdefault(day, []).append(ts)
+            except (ValueError, KeyError):
                 continue
-        if not user_days:
-            return 0
-        sorted_days = sorted(user_days)
-        max_streak = 1
-        current_streak = 1
+
+        if not day_timestamps:
+            return {"days": 0, "last_day": 0, "earliest_ts": None}
+
+        sorted_days = sorted(day_timestamps.keys())
+
+        # best: (length, end_day, earliest_on_last_day_iso)
+        best: tuple[int, int, str] | None = None
+        cur_start = sorted_days[0]
+        cur_end = sorted_days[0]
+
+        def _finish_segment(start: int, end: int):
+            nonlocal best
+            length = end - start + 1
+            earliest = min(day_timestamps[end]).isoformat()
+            if best is None or length > best[0] or (length == best[0] and end > best[1]):
+                best = (length, end, earliest)
+
         for i in range(1, len(sorted_days)):
             if sorted_days[i] == sorted_days[i - 1] + 1:
-                current_streak += 1
-                max_streak = max(max_streak, current_streak)
+                cur_end = sorted_days[i]
             else:
-                current_streak = 1
-        return max_streak
+                _finish_segment(cur_start, cur_end)
+                cur_start = sorted_days[i]
+                cur_end = sorted_days[i]
+
+        _finish_segment(cur_start, cur_end)
+
+        if best is None:
+            return {"days": 0, "last_day": 0, "earliest_ts": None}
+        return {"days": best[0], "last_day": best[1], "earliest_ts": best[2]}
+
+    def _find_streak_king(self, group_id: str, stats: dict) -> tuple[str, int]:
+        """评选连续打卡王。返回 (昵称, 天数)。
+
+        优先比较最长连续天数（降序）；天数相同时比较各自连续段
+        最后一天的最早打卡时间（升序）；再平局按 dict 遍历顺序取第一个。
+        """
+        king_name = "暂无"
+        king_info: dict = {"days": 0, "last_day": 0, "earliest_ts": None}
+
+        for uid in stats:
+            info = self._get_streak(group_id, uid)
+            if info["days"] == 0:
+                continue
+            if info["days"] > king_info["days"]:
+                king_info = info
+                king_name = stats[uid]["nickname"]
+            elif info["days"] == king_info["days"]:
+                # 加赛：最后一天打卡时间更早的胜出
+                cur_ts = info.get("earliest_ts")
+                king_ts = king_info.get("earliest_ts")
+                if king_ts is None or (cur_ts is not None and cur_ts < king_ts):
+                    king_info = info
+                    king_name = stats[uid]["nickname"]
+
+        return king_name, king_info["days"]
 
     def _get_hourly_distribution(self, group_id: str, month_key: str) -> dict[str, int]:
         """统计指定群+月的时段分布。"""
@@ -589,20 +646,45 @@ class DeerPipeTablePlugin(MaiBotPlugin):
                 continue
         return dist
 
-    def _get_daily_max(self, group_id: str, month_key: str) -> tuple[str, int]:
-        """获取单日最高记录。返回 (日期, 次数)。"""
+    def _get_daily_max(self, group_id: str, month_key: str) -> tuple[str, str, int]:
+        """获取单日最高记录（按用户维度）。
+
+        统计每个用户每天各自打了多少次，找出单天次数最高的用户。
+        返回 (昵称, 日期, 次数)。
+
+        加赛规则：同一日期两个用户打出相同最高次数时，
+        选该日打卡时间最早的用户。
+        """
         records = self._load_records(group_id, month_key)
-        day_count: dict[str, int] = defaultdict(int)
+        # key: (user_id, date_str), value: {"count": int, "earliest": datetime}
+        user_day: dict[tuple[str, str], dict] = {}
+        nickname_map: dict[str, str] = {}
+
         for r in records:
             try:
                 ts = datetime.fromisoformat(r["timestamp"])
-                day_count[ts.strftime("%m-%d")] += 1
             except (ValueError, KeyError):
                 continue
-        if not day_count:
-            return "无", 0
-        best_day = max(day_count, key=lambda k: day_count[k])
-        return best_day, day_count[best_day]
+            uid = r["user_id"]
+            date_str = ts.strftime("%m-%d")
+            nickname_map[uid] = r.get("nickname", uid)
+            key = (uid, date_str)
+            if key not in user_day:
+                user_day[key] = {"count": 0, "earliest": ts}
+            user_day[key]["count"] += 1
+            if ts < user_day[key]["earliest"]:
+                user_day[key]["earliest"] = ts
+
+        if not user_day:
+            return "无", "无", 0
+
+        # 主排序：次数降序；次数相同时，最早打卡时间升序
+        best_key = max(
+            user_day,
+            key=lambda k: (user_day[k]["count"], -user_day[k]["earliest"].timestamp()),
+        )
+        best_uid, best_date = best_key
+        return nickname_map.get(best_uid, best_uid), best_date, user_day[best_key]["count"]
 
     def _cleanup_old_records(self) -> None:
         """清理过期数据文件。"""
@@ -839,24 +921,16 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             total = sum(d["count"] for _, d in sorted_users)
             hourly = self._get_hourly_distribution(stream_id, month_key)
             peak_hour = max(hourly, key=lambda k: hourly[k])
-            best_day, best_count = self._get_daily_max(stream_id, month_key)
-
-            # 连续打卡王
-            max_streak_user = ""
-            max_streak = 0
-            for uid in stats:
-                s = self._get_streak(stream_id, uid)
-                if s > max_streak:
-                    max_streak = s
-                    max_streak_user = stats[uid]["nickname"]
+            best_name, best_date, best_count = self._get_daily_max(stream_id, month_key)
+            streak_king_name, streak_king_count = self._find_streak_king(stream_id, stats)
 
             lines = [
                 f"📊 {month_key} 鹿管月表",
                 f"🦌 总鹿管次数：{total}",
                 f"👑 鹿管王：{sorted_users[0][1]['nickname']}（{sorted_users[0][1]['count']} 次）",
-                f"🔥 连续打卡王：{max_streak_user}（{max_streak} 天）",
+                f"🔥 连续打卡王：{streak_king_name}（{streak_king_count} 天）",
                 f"⏰ 最活跃时段：{peak_hour}（{hourly[peak_hour]} 次）",
-                f"📅 单日最高：{best_day}（{best_count} 次）",
+                f"📅 单日最高：{best_name}（{best_date} {best_count} 次）",
             ]
             return {"name": "deer_pipe_monthly", "content": "\n".join(lines)}
         except Exception as e:
@@ -907,7 +981,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
 
             sorted_users = sorted(stats.items(), key=lambda x: x[1]["count"], reverse=True)
             rank = next(i for i, (uid, _) in enumerate(sorted_users, 1) if uid == user_id)
-            streak = self._get_streak(stream_id, user_id)
+            streak = self._get_streak(stream_id, user_id)["days"]
 
             lines = [
                 f"📊 {user_data['nickname']} 本月🦌管统计",
@@ -959,13 +1033,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         try:
             hourly = self._get_hourly_distribution(group_id, month_key)
             best_day = self._get_daily_max(group_id, month_key)
-            streak_king_name = "暂无"
-            streak_king_count = 0
-            for uid in stats:
-                s = self._get_streak(group_id, uid)
-                if s > streak_king_count:
-                    streak_king_count = s
-                    streak_king_name = stats[uid]["nickname"]
+            streak_king_name, streak_king_count = self._find_streak_king(group_id, stats)
             all_time = self._get_all_time_stats(group_id)
             all_time_sorted = sorted(all_time.items(), key=lambda x: x[1]["count"], reverse=True)
 
