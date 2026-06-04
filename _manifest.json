@@ -1,9 +1,18 @@
 {
   "manifest_version": 2,
   "id": "com.zfgy.deer-pipe-table",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "name": "鹿管记录插件",
   "description": "记录群成员鹿管次数，生成月度图表和排行榜",
+  "plugin_type": "tool",
+  "display": {
+    "icon": {
+      "type": "emoji",
+      "value": "🦌",
+      "fallback": "bar-chart-3",
+      "background": "#f59e0b"
+    }
+  },
   "author": {
     "name": "追风观影",
     "url": "https://github.com/zfgy-ma"

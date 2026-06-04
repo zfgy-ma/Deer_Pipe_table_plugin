@@ -1,11 +1,12 @@
 """鹿管记录与月度统计插件。
 
-群成员发送 🦌 时记录鹿管次数（带限频），支持：
-- 排行榜查询（🦌王）
-- 个人统计（我的鹿管）
-- 月度图表（X月鹿表 / 上月鹿表 / 本月鹿表）
-- LLM Tool 查询
-- 历史总榜、连续打卡、时段分布、单日最高等趣味统计
+群成员发送鹿管 emoji 时记录次数（带限频），支持：
+- 鹿管记录 — 发送触发词记录一次并返回个人热力图
+- 排行榜查询 — 查看本月鹿管王 Top 10
+- 个人统计 — 查看个人月度热力图与统计
+- 月度图表 — 生成含热力图/柱状图/趣味统计的完整报告
+- LLM Tool — deer_pipe_monthly / deer_pipe_personal 供智能体调用
+- 趣味统计 — 连续打卡王、单日最高、最活跃时段、历史总榜
 """
 
 from __future__ import annotations
@@ -15,25 +16,28 @@ import hashlib
 import json
 import os
 import re
-import tomllib
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
-from maibot_sdk import Command, EventHandler, Field, MaiBotPlugin, PluginConfigBase, Tool
+from maibot_sdk import Command, EventHandler, Field, MaiBotPlugin, Tool
 from maibot_sdk.compat.base.base_command import BaseCommand
-
-from . import chart_template
 from maibot_sdk.types import EventType, ToolParameterInfo, ToolParamType
 
-# 插件目录与数据路径
+from . import chart_template
+from .config import CONFIG_SCHEMA_VERSION, DeerPluginConfig
+
+# ═══════════════════════════════════════════════════════════════════════
+# 路径与常量
+# ═══════════════════════════════════════════════════════════════════════
+
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(PLUGIN_DIR, "data")
 CACHE_DIR = os.path.join(PLUGIN_DIR, "chart_cache")
 
-# 时间段标签
 HOUR_LABELS = ["凌晨(0-6)", "早上(6-9)", "上午(9-12)", "中午(12-14)", "下午(14-18)", "晚上(18-21)", "深夜(21-24)"]
 _HOUR_BREAKPOINTS = [6, 9, 12, 14, 18, 21]
+
 
 def _get_hour_label(hour: int) -> str:
     """根据小时数返回时段标签。"""
@@ -41,127 +45,14 @@ def _get_hour_label(hour: int) -> str:
     return HOUR_LABELS[index]
 
 
-# ===== 配置模型 =====
-
-
-class PluginSectionConfig(PluginConfigBase):
-    """插件开关配置"""
-
-    __ui_label__ = "插件"
-    __ui_order__ = 0
-
-    enabled: bool = Field(default=False, description="是否启用插件")
-    config_version: str = Field(default="1.0.0", description="配置版本")
-
-
-class TriggerConfig(PluginConfigBase):
-    """触发词与功能开关配置 鹿管记录功能 排行榜查询功能 个人统计查询功能 月度图表查询功能(为空使用默认值)"""
-
-    __ui_label__ = "触发词"
-    __ui_order__ = 1
-
-    enable_record: bool = Field(default=True, description="启用鹿管记录功能")
-    deer_pipe_record_words: str = Field(default="🦌", description="鹿管记录触发词（单一值）")
-
-    enable_rank: bool = Field(default=True, description="启用排行榜查询功能")
-    deer_pipe_rank_words: str = Field(default="🦌排名", description="排行榜查询触发词（单一值）")
-
-    enable_personal: bool = Field(default=True, description="启用个人统计查询功能")
-    deer_pipe_personal_words: str = Field(default="我的🦌", description="个人统计查询触发词（单一值）")
-
-    enable_monthly: bool = Field(default=True, description="启用月度图表查询功能")
-    deer_pipe_monthly_words: str = Field(default="🦌表", description="月度图表基础词（单一值）")
-
-
-class DarkModeConfig(PluginConfigBase):
-    """夜间模式配置"""
-
-    __ui_label__ = "夜间模式"
-    __ui_order__ = 2
-
-    dark_mode: bool = Field(default=True, description="开启夜间模式（21:00-07:00 自动切换为暗色主题）")
-    dark_start: int = Field(default=21, description="夜间模式开始时间（小时，0-23）")
-    dark_end: int = Field(default=7, description="夜间模式结束时间（小时，0-23）")
-
-
-class RateLimitConfig(PluginConfigBase):
-    """限频配置：每次记录的冷却时间（分钟） 超限时的回复内容"""
-
-    __ui_label__ = "限频"
-    __ui_order__ = 3
-
-    cooldown_minutes: int = Field(default=24, description="每次记录的冷却时间（分钟）")
-    exceed_reply: str = Field(default="注意身体，歇会儿吧！", description="超限时的回复内容")
-
-
-class RetentionConfig(PluginConfigBase):
-    """数据保留配置：数据保留月数 是否在加载时自动清理过期数据"""
-
-    __ui_label__ = "数据保留"
-    __ui_order__ = 4
-
-    months: int = Field(default=2, description="数据保留月数")
-    auto_cleanup: bool = Field(default=True, description="是否在加载时自动清理过期数据")
-
-
-class GroupFilterConfig(PluginConfigBase):
-    """群过滤配置（白名单模式）留空表示允许所有群"""
-
-    __ui_label__ = "群过滤"
-    __ui_icon__ = "users"
-    __ui_order__ = 5
-
-    allowed_groups: list[str] = Field(default_factory=list, description="白名单群号列表，留空表示允许所有群")
-
-
-class DeerPluginConfig(PluginConfigBase):
-    """鹿管插件总配置。"""
-
-    plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
-    trigger: TriggerConfig = Field(default_factory=TriggerConfig)
-    dark_mode: DarkModeConfig = Field(default_factory=DarkModeConfig)
-    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
-    retention: RetentionConfig = Field(default_factory=RetentionConfig)
-    group_filter: GroupFilterConfig = Field(default_factory=GroupFilterConfig)
-
-
-# 模块级默认配置预读（供 @Command 装饰器使用，热重载后需重启插件生效）
-_DEFAULT_CONFIG_PATH = os.path.join(PLUGIN_DIR, "config.toml")
-_default_trigger: dict[str, str] = {}
-if os.path.exists(_DEFAULT_CONFIG_PATH):
-    try:
-        with open(_DEFAULT_CONFIG_PATH, "rb") as _f:
-            _raw = tomllib.load(_f)
-        _default_trigger = _raw.get("trigger", {})
-    except Exception:
-        pass
-
-# 从配置文件读取各命令的单一触发词，为空时使用硬编码默认值
-_record_trigger = _default_trigger.get("deer_pipe_record_words", "") or "🦌"
-_rank_trigger = _default_trigger.get("deer_pipe_rank_words", "") or "🦌排行"
-_personal_trigger = _default_trigger.get("deer_pipe_personal_words", "") or "我的🦌"
-_monthly_trigger = _default_trigger.get("deer_pipe_monthly_words", "") or "🦌表"
-
-# 各命令的正则 pattern（全量匹配，锚定 ^$）
-_record_pattern = rf"^{re.escape(_record_trigger)}$"
-_rank_pattern = rf"^{re.escape(_rank_trigger)}$"
-_personal_pattern = rf"^{re.escape(_personal_trigger)}$"
-_monthly_pattern = (
-    rf"^(?:上月{re.escape(_monthly_trigger)}"
-    rf"|本月{re.escape(_monthly_trigger)}"
-    rf"|{re.escape(_monthly_trigger)}\s*(?P<m>\d{{1,2}})月"
-    rf"|{re.escape(_monthly_trigger)})$"
-)
-
-# ===== Command 组件类 =====
+# ═══ Command 组件类 =====
 
 
 class DeerRecordCommand(BaseCommand):
-    """鹿管记录命令：记录一次鹿管并发送个人热力图。"""
+    """鹿管记录命令。"""
 
     command_name = "deer_pipe_record"
     command_description = "记录一次鹿管并发送个人热力图"
-    command_pattern = _record_pattern
 
     def __init__(self, plugin: "DeerPipeTablePlugin", **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -171,20 +62,9 @@ class DeerRecordCommand(BaseCommand):
     async def execute(self) -> tuple[bool, str | None, int]:
         if not self._stream_id:
             return False, "无法获取聊天流信息", 0
-
-        # 开关检查
         if not self.plugin.config.trigger.enable_record:
             return False, None, 0
 
-        # 确保触发词有值，为空时自动修复 config.toml
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_record_words", "🦌")
-
-        # 全量匹配
-        raw_text = str(self.kwargs.get("text") or "").strip()
-        if raw_text != trigger:
-            return False, None, 0
-
-        # 提取用户信息
         user_id = str(self.kwargs.get("user_id") or "")
         msg_dict = self.kwargs.get("message") or {}
         nickname = str(
@@ -195,12 +75,10 @@ class DeerRecordCommand(BaseCommand):
             self.plugin.ctx.logger.warning("鹿管记录：无法获取发送者 user_id，跳过记录")
             return False, "无法识别用户身份", 0
 
-        # 白名单校验
         allowed = self.plugin.config.group_filter.allowed_groups
         if allowed and self._stream_id not in allowed:
             return True, "非白名单群，已忽略", 2
 
-        # 限频检查 + 记录
         success = self.plugin._add_record(self._stream_id, user_id, nickname)
         if not success:
             cooldown = self.plugin.config.rate_limit.cooldown_minutes
@@ -210,7 +88,6 @@ class DeerRecordCommand(BaseCommand):
             )
             return True, "冷却期内拦截", 2
 
-        # 生成热力图 + 发送 hybrid 混合消息
         image_base64 = await self.plugin._build_personal_heatmap_base64(
             self._stream_id, user_id, nickname
         )
@@ -233,11 +110,10 @@ class DeerRecordCommand(BaseCommand):
 
 
 class DeerRankCommand(BaseCommand):
-    """鹿管排行榜命令：查询本月鹿管排行榜。"""
+    """鹿管排行榜命令。"""
 
     command_name = "deer_pipe_rank"
     command_description = "查询本月鹿管排行榜"
-    command_pattern = _rank_pattern
 
     def __init__(self, plugin: "DeerPipeTablePlugin", **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -245,16 +121,7 @@ class DeerRankCommand(BaseCommand):
         self.kwargs = kwargs
 
     async def execute(self) -> tuple[bool, str | None, int]:
-        # 开关检查
         if not self.plugin.config.trigger.enable_rank:
-            return False, None, 0
-
-        # 确保触发词有值
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_rank_words", "上")
-
-        # 全量匹配
-        raw_text = str(self.kwargs.get("text") or "").strip()
-        if raw_text != trigger:
             return False, None, 0
 
         now = datetime.now()
@@ -272,7 +139,9 @@ class DeerRankCommand(BaseCommand):
         total_count = sum(d["count"] for _, d in sorted_users)
 
         try:
-            html = chart_template.build_deer_pipe_rank_chart(month_key, sorted_users, total_count, is_dark=self.plugin._is_dark_mode())
+            html = chart_template.build_deer_pipe_rank_chart(
+                month_key, sorted_users, total_count, is_dark=self.plugin._is_dark_mode()
+            )
             result = await self.plugin.ctx.render.html2png(
                 html=html,
                 selector="#chart-container",
@@ -288,7 +157,6 @@ class DeerRankCommand(BaseCommand):
         except Exception:
             pass
 
-        # 降级为文本
         lines = [f"本月鹿管排行榜（{month_key}）", f"总次数：{total_count}", "─" * 20]
         for i, (uid, data) in enumerate(sorted_users[:10], 1):
             medal = ["🥇", "🥈", "🥉"][i - 1] if i <= 3 else f"{i}."
@@ -298,11 +166,10 @@ class DeerRankCommand(BaseCommand):
 
 
 class DeerPersonalCommand(BaseCommand):
-    """个人统计命令：查询个人鹿管热力图。"""
+    """个人统计命令。"""
 
     command_name = "deer_pipe_personal"
     command_description = "查询个人鹿管统计，发送热力图"
-    command_pattern = _personal_pattern
 
     def __init__(self, plugin: "DeerPipeTablePlugin", **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -312,20 +179,9 @@ class DeerPersonalCommand(BaseCommand):
     async def execute(self) -> tuple[bool, str | None, int]:
         if not self._stream_id:
             return False, "无法获取聊天流信息", 0
-
-        # 开关检查
         if not self.plugin.config.trigger.enable_personal:
             return False, None, 0
 
-        # 确保触发词有值
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_personal_words", "上")
-
-        # 全量匹配
-        raw_text = str(self.kwargs.get("text") or "").strip()
-        if raw_text != trigger:
-            return False, None, 0
-
-        # 提取用户信息
         user_id = str(self.kwargs.get("user_id") or "")
         msg_dict = self.kwargs.get("message") or {}
         nickname = str(
@@ -364,11 +220,10 @@ class DeerPersonalCommand(BaseCommand):
 
 
 class DeerMonthlyCommand(BaseCommand):
-    """月度图表命令：查询月度鹿管图表。"""
+    """月度图表命令。"""
 
     command_name = "deer_pipe_monthly"
     command_description = "查询月度鹿管图表，支持上月/本月/指定月份"
-    command_pattern = _monthly_pattern
 
     def __init__(self, plugin: "DeerPipeTablePlugin", **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -378,15 +233,11 @@ class DeerMonthlyCommand(BaseCommand):
     async def execute(self) -> tuple[bool, str | None, int]:
         if not self._stream_id:
             return False, "无法获取聊天流信息", 0
-
-        # 开关检查
         if not self.plugin.config.trigger.enable_monthly:
             return False, None, 0
 
-        # 确保触发词有值
-        trigger = self.plugin._ensure_trigger_default("deer_pipe_monthly_words", "🦌表")
-
         raw_text = str(self.kwargs.get("text") or "").strip()
+        trigger = self.plugin.config.trigger.deer_pipe_monthly_words
 
         now = datetime.now()
         if raw_text == f"上月{trigger}":
@@ -398,18 +249,12 @@ class DeerMonthlyCommand(BaseCommand):
             if m_str:
                 month_num = int(m_str)
             else:
-                m = re.match(
-                    rf"^{re.escape(trigger)}\s*(?P<m>\d{{1,2}})月$", raw_text
-                )
-                if m:
-                    month_num = int(m.group("m"))
-                else:
-                    return False, None, 0
+                return False, None, 0
 
         return await self.plugin._handle_monthly_chart(self._stream_id, month_num)
 
 
-# ===== 鹿管插件主类 =====
+# ═══ 鹿管插件主类 =====
 
 
 class DeerPipeTablePlugin(MaiBotPlugin):
@@ -417,7 +262,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
 
     config_model = DeerPluginConfig
 
-    # ===== 数据层 =====
+    # ═══ 数据层 =====
 
     def _data_path(self, group_id: str, month_key: str) -> str:
         """获取指定群+月的数据文件路径。"""
@@ -704,20 +549,30 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             except OSError:
                 continue
 
-    # ===== 组件注册 =====
+    # ═══ 组件注册 =====
 
     def get_components(self) -> list[dict[str, Any]]:
-        """通过 BaseCommand 子类注册命令组件，替代 @Command 装饰器。"""
+        """注册 BaseCommand 子类，从配置动态构建 command_pattern。"""
+        cfg = self.config.trigger
+
+        _record = cfg.deer_pipe_record_words
+        _rank = cfg.deer_pipe_rank_words
+        _personal = cfg.deer_pipe_personal_words
+        _monthly = cfg.deer_pipe_monthly_words
+
+        DeerRecordCommand.command_pattern = rf"^{re.escape(_record)}$"
+        DeerRankCommand.command_pattern = rf"^{re.escape(_rank)}$"
+        DeerPersonalCommand.command_pattern = rf"^{re.escape(_personal)}$"
+        DeerMonthlyCommand.command_pattern = (
+            rf"^(?:上月{re.escape(_monthly)}"
+            rf"|本月{re.escape(_monthly)}"
+            rf"|{re.escape(_monthly)}\s*(?P<m>\d{{1,2}})月"
+            rf"|{re.escape(_monthly)})$"
+        )
+
         components = super().get_components()
-        # 移除 @Command 装饰器注册的旧条目（如有）
         components = [c for c in components if c.get("type") != "command"]
-        # 注册 BaseCommand 子类
-        for cmd_cls in [
-            DeerRecordCommand,
-            DeerRankCommand,
-            DeerPersonalCommand,
-            DeerMonthlyCommand,
-        ]:
+        for cmd_cls in [DeerRecordCommand, DeerRankCommand, DeerPersonalCommand, DeerMonthlyCommand]:
             cmd_info = cmd_cls.get_command_info()
             handler_name = f"handle_{cmd_cls.command_name.split('_')[-1]}"
             components.append({
@@ -731,7 +586,37 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             })
         return components
 
-    # ===== Command 委托方法 =====
+    # ═══ Command 委托方法 =====
+
+    async def handle_record(self, stream_id: str = "", **kwargs: Any) -> Any:
+        cmd = DeerRecordCommand(plugin=self, **kwargs)
+        cmd._stream_id = stream_id
+        if matched_groups := kwargs.get("matched_groups"):
+            cmd.set_matched_groups(matched_groups)
+        return await cmd.execute()
+
+    async def handle_rank(self, stream_id: str = "", **kwargs: Any) -> Any:
+        cmd = DeerRankCommand(plugin=self, **kwargs)
+        cmd._stream_id = stream_id
+        if matched_groups := kwargs.get("matched_groups"):
+            cmd.set_matched_groups(matched_groups)
+        return await cmd.execute()
+
+    async def handle_personal(self, stream_id: str = "", **kwargs: Any) -> Any:
+        cmd = DeerPersonalCommand(plugin=self, **kwargs)
+        cmd._stream_id = stream_id
+        if matched_groups := kwargs.get("matched_groups"):
+            cmd.set_matched_groups(matched_groups)
+        return await cmd.execute()
+
+    async def handle_monthly(self, stream_id: str = "", **kwargs: Any) -> Any:
+        cmd = DeerMonthlyCommand(plugin=self, **kwargs)
+        cmd._stream_id = stream_id
+        if matched_groups := kwargs.get("matched_groups"):
+            cmd.set_matched_groups(matched_groups)
+        return await cmd.execute()
+
+    # ═══ 夜间模式 =====
 
     def _is_dark_mode(self) -> bool:
         """判断当前是否应使用夜间模式。"""
@@ -745,46 +630,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             return now.hour >= start or now.hour < end
         return start <= now.hour < end
 
-    def _ensure_trigger_default(self, field_name: str, default_value: str) -> str:
-        """确保触发词配置项有值。为空时返回预设默认值。"""
-        value = getattr(self.config.trigger, field_name, "").strip()
-        return value if value else default_value
-
-    async def handle_record(self, stream_id: str = "", **kwargs: Any) -> Any:
-        cmd = DeerRecordCommand(plugin=self, **kwargs)
-        cmd._stream_id = stream_id
-        if matched_groups := kwargs.get("matched_groups"):
-            cmd.set_matched_groups(matched_groups)
-        return await cmd.execute()
-
-    # ===== 排行榜委托 =====
-
-    async def handle_rank(self, stream_id: str = "", **kwargs: Any) -> Any:
-        cmd = DeerRankCommand(plugin=self, **kwargs)
-        cmd._stream_id = stream_id
-        if matched_groups := kwargs.get("matched_groups"):
-            cmd.set_matched_groups(matched_groups)
-        return await cmd.execute()
-
-    # ===== 个人统计委托 =====
-
-    async def handle_personal(self, stream_id: str = "", **kwargs: Any) -> Any:
-        cmd = DeerPersonalCommand(plugin=self, **kwargs)
-        cmd._stream_id = stream_id
-        if matched_groups := kwargs.get("matched_groups"):
-            cmd.set_matched_groups(matched_groups)
-        return await cmd.execute()
-
-    # ===== @Command — 月度图表 =====
-
-    async def handle_monthly(self, stream_id: str = "", **kwargs: Any) -> Any:
-        cmd = DeerMonthlyCommand(plugin=self, **kwargs)
-        cmd._stream_id = stream_id
-        if matched_groups := kwargs.get("matched_groups"):
-            cmd.set_matched_groups(matched_groups)
-        return await cmd.execute()
-
-    # ===== 共享辅助：个人热力图生成 =====
+    # ═══ 共享辅助：个人热力图生成 =====
 
     async def _build_personal_heatmap_base64(
         self, stream_id: str, user_id: str, nickname: str
@@ -851,7 +697,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         await self.ctx.send.text("\n".join(lines), stream_id)
         return True, f"已发送 {month_key} 文本统计", 2
 
-    # ===== @Tool — LLM 工具 =====
+    # ═══ @Tool — LLM 工具 =====
 
     @Tool(
         "deer_pipe_rank",
@@ -995,7 +841,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             return {"name": "deer_pipe_personal", "content": f"查询个人统计失败：{e}"}
 
 
-    # ===== 图表生成 =====
+    # ═══ 图表生成 =====
 
     @staticmethod
     def _extract_base64(result: Any) -> str | None:
@@ -1059,7 +905,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         except Exception:
             return None
 
-    # ===== 生命周期 =====
+    # ═══ 生命周期 =====
 
     async def on_load(self) -> None:
         """插件加载时初始化数据目录并清理过期记录。"""
