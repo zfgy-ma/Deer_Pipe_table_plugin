@@ -20,9 +20,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
-from maibot_sdk import Command, EventHandler, Field, MaiBotPlugin, Tool
+from maibot_sdk import Command, EventHandler, Field, MaiBotPlugin
 from maibot_sdk.compat.base.base_command import BaseCommand
-from maibot_sdk.types import EventType, ToolParameterInfo, ToolParamType
+from maibot_sdk.types import EventType
 
 from . import chart_template
 from .config import CONFIG_SCHEMA_VERSION, DeerPluginConfig
@@ -696,150 +696,6 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             lines.append(f"{i}. {data['nickname']}：{data['count']} 次")
         await self.ctx.send.text("\n".join(lines), stream_id)
         return True, f"已发送 {month_key} 文本统计", 2
-
-    # ═══ @Tool — LLM 工具 =====
-
-    @Tool(
-        "deer_pipe_rank",
-        description="查询本群本月鹿管次数排行榜。当用户询问'谁最鹿'、'鹿管排名'、'排行榜'时使用此工具。"
-        "返回 Top 10 排名及各自鹿管次数。",
-        parameters=[
-            ToolParameterInfo(
-                name="stream_id",
-                param_type=ToolParamType.STRING,
-                description="当前聊天流 ID",
-                required=True,
-            ),
-        ],
-    )
-    async def tool_query_deer_pipe_rank(self, stream_id: str = "", **kwargs: Any) -> dict:
-        """LLM Tool：查询鹿管排行榜。"""
-        del kwargs
-        try:
-            now = datetime.now()
-            month_key = now.strftime("%Y-%m")
-            stats = self._get_monthly_stats(stream_id, month_key)
-            if not stats:
-                return {"name": "deer_pipe_rank", "content": "本月暂无鹿管记录。"}
-
-            sorted_users = sorted(stats.items(), key=lambda x: x[1]["count"], reverse=True)
-            lines = [f"🏆 {month_key} 鹿管排行榜："]
-            for i, (uid, data) in enumerate(sorted_users[:10], 1):
-                lines.append(f"{i}. {data['nickname']}：{data['count']} 次")
-            return {"name": "deer_pipe_rank", "content": "\n".join(lines)}
-        except Exception as e:
-            return {"name": "deer_pipe_rank", "content": f"查询排行榜失败：{e}"}
-
-    @Tool(
-        "deer_pipe_monthly",
-        description="查询指定月份的鹿管统计数据和趣味分析。当用户询问'X月鹿表'、'月度统计'、'这个月鹿管情况'时使用。"
-        "返回月度总次数、Top 排行、热门时段、单日最高和连续打卡王等信息。",
-        parameters=[
-            ToolParameterInfo(
-                name="stream_id",
-                param_type=ToolParamType.STRING,
-                description="当前聊天流 ID",
-                required=True,
-            ),
-            ToolParameterInfo(
-                name="month",
-                param_type=ToolParamType.INTEGER,
-                description="查询月份（1-12），默认为当前月",
-                required=False,
-            ),
-        ],
-    )
-    async def tool_query_monthly(self, stream_id: str = "", month: int = 0, **kwargs: Any) -> dict:
-        """LLM Tool：查询月度鹿管统计。"""
-        del kwargs
-        try:
-            now = datetime.now()
-            if month < 1 or month > 12:
-                month = now.month
-            year = now.year if month <= now.month else now.year - 1
-            month_key = f"{year}-{month:02d}"
-
-            stats = self._get_monthly_stats(stream_id, month_key)
-            if not stats:
-                return {"name": "deer_pipe_monthly", "content": f"{month_key} 暂无鹿管记录。"}
-
-            sorted_users = sorted(stats.items(), key=lambda x: x[1]["count"], reverse=True)
-            total = sum(d["count"] for _, d in sorted_users)
-            hourly = self._get_hourly_distribution(stream_id, month_key)
-            peak_hour = max(hourly, key=lambda k: hourly[k])
-            best_name, best_date, best_count = self._get_daily_max(stream_id, month_key)
-            streak_king_name, streak_king_count = self._find_streak_king(stream_id, stats)
-
-            lines = [
-                f"📊 {month_key} 鹿管月表",
-                f"🦌 总鹿管次数：{total}",
-                f"👑 鹿管王：{sorted_users[0][1]['nickname']}（{sorted_users[0][1]['count']} 次）",
-                f"🔥 连续打卡王：{streak_king_name}（{streak_king_count} 天）",
-                f"⏰ 最活跃时段：{peak_hour}（{hourly[peak_hour]} 次）",
-                f"📅 单日最高：{best_name}（{best_date} {best_count} 次）",
-            ]
-            return {"name": "deer_pipe_monthly", "content": "\n".join(lines)}
-        except Exception as e:
-            return {"name": "deer_pipe_monthly", "content": f"查询月表失败：{e}"}
-
-    @Tool(
-        "deer_pipe_personal",
-        description="查询指定群成员的鹿管个人统计。当用户询问'我鹿了多少次'、'我的鹿管排名'、'XX的鹿管统计'时使用。"
-        "返回该成员的鹿管次数、群内排名、活跃天数、最长连续打卡和时段偏好。",
-        parameters=[
-            ToolParameterInfo(
-                name="stream_id",
-                param_type=ToolParamType.STRING,
-                description="当前聊天流 ID",
-                required=True,
-            ),
-            ToolParameterInfo(
-                name="user_id",
-                param_type=ToolParamType.STRING,
-                description="要查询的用户 ID（QQ号），不传则默认查询发送者本人",
-                required=False,
-            ),
-            ToolParameterInfo(
-                name="nickname",
-                param_type=ToolParamType.STRING,
-                description="要查询的用户昵称（用于展示）",
-                required=False,
-            ),
-        ],
-    )
-    async def tool_query_personal(
-        self, stream_id: str = "", user_id: str = "", nickname: str = "", **kwargs: Any
-    ) -> dict:
-        """LLM Tool：查询个人鹿管统计。"""
-        del kwargs
-        try:
-            if not user_id:
-                return {"name": "deer_pipe_personal", "content": "请指定要查询的用户 ID。"}
-
-            now = datetime.now()
-            month_key = now.strftime("%Y-%m")
-            stats = self._get_monthly_stats(stream_id, month_key)
-            user_data = stats.get(user_id)
-
-            if not user_data:
-                display_name = nickname or user_id
-                return {"name": "deer_pipe_personal", "content": f"{display_name} 本月暂无鹿管记录。"}
-
-            sorted_users = sorted(stats.items(), key=lambda x: x[1]["count"], reverse=True)
-            rank = next(i for i, (uid, _) in enumerate(sorted_users, 1) if uid == user_id)
-            streak = self._get_streak(stream_id, user_id)["days"]
-
-            lines = [
-                f"📊 {user_data['nickname']} 本月🦌管统计",
-                f"🦌 鹿管次数：{user_data['count']} 次",
-                f"🏅 排名：第 {rank} 名（共 {len(stats)} 人）",
-                f"🔥 最长连续打卡：{streak} 天",
-                f"📅 活跃天数：{len(user_data['days'])} 天",
-            ]
-            return {"name": "deer_pipe_personal", "content": "\n".join(lines)}
-        except Exception as e:
-            return {"name": "deer_pipe_personal", "content": f"查询个人统计失败：{e}"}
-
 
     # ═══ 图表生成 =====
 

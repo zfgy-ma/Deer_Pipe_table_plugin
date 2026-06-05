@@ -288,12 +288,12 @@ class RateLimitSection(PluginConfigBase):
         description="每次记录之间的冷却时间（分钟）。",
         json_schema_extra={
             "label": "冷却时间（分钟）",
-            "hint": "同一个人两次鹿管记录之间至少间隔的分钟数。默认 24 分钟。",
+            "hint": "同一个人两次鹿管记录之间至少间隔的分钟数。默认 24 分钟。(一天为1440分钟)",
             "i18n": _schema_i18n(
                 label_en="Cooldown (minutes)",
                 label_ja="クールダウン（分）",
-                hint_en="Minimum minutes between two check-ins by the same person. Default: 24.",
-                hint_ja="同じ人のチェックイン間隔の最小分数。デフォルト: 24分。",
+                hint_en="Minimum minutes between two check-ins by the same person. Default: 24.(One day is 1440 minutes)",
+                hint_ja="同じ人のチェックイン間隔の最小分数。デフォルト: 24分。(1日は1440分)",
             ),
             "order": 0,
         },
