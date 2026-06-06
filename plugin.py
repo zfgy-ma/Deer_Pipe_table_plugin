@@ -5,7 +5,6 @@
 - 排行榜查询 — 查看本月鹿管王 Top 10
 - 个人统计 — 查看个人月度热力图与统计
 - 月度图表 — 生成含热力图/柱状图/趣味统计的完整报告
-- LLM Tool — deer_pipe_monthly / deer_pipe_personal 供智能体调用
 - 趣味统计 — 连续打卡王、单日最高、最活跃时段、历史总榜
 """
 
@@ -20,9 +19,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
-from maibot_sdk import Command, EventHandler, Field, MaiBotPlugin
+from maibot_sdk import MaiBotPlugin
 from maibot_sdk.compat.base.base_command import BaseCommand
-from maibot_sdk.types import EventType
 
 from . import chart_template
 from .config import CONFIG_SCHEMA_VERSION, DeerPluginConfig
@@ -75,11 +73,12 @@ class DeerRecordCommand(BaseCommand):
             self.plugin.ctx.logger.warning("鹿管记录：无法获取发送者 user_id，跳过记录")
             return False, "无法识别用户身份", 0
 
+        real_group_id = str(self.kwargs.get("group_id") or "")
         allowed = self.plugin.config.group_filter.allowed_groups
-        if allowed and self._stream_id not in allowed:
+        if allowed and real_group_id not in allowed:
             return True, "非白名单群，已忽略", 2
 
-        success = self.plugin._add_record(self._stream_id, user_id, nickname)
+        success = self.plugin._add_record(real_group_id, user_id, nickname)
         if not success:
             cooldown = self.plugin.config.rate_limit.cooldown_minutes
             await self.plugin.ctx.send.text(
@@ -89,11 +88,11 @@ class DeerRecordCommand(BaseCommand):
             return True, "冷却期内拦截", 2
 
         image_base64 = await self.plugin._build_personal_heatmap_base64(
-            self._stream_id, user_id, nickname
+            real_group_id, user_id, nickname
         )
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
-        stats = self.plugin._get_monthly_stats(self._stream_id, month_key)
+        stats = self.plugin._get_monthly_stats(real_group_id, month_key)
         user_count = stats.get(user_id, {}).get("count", 0)
 
         if image_base64:
@@ -124,9 +123,10 @@ class DeerRankCommand(BaseCommand):
         if not self.plugin.config.trigger.enable_rank:
             return False, None, 0
 
+        real_group_id = str(self.kwargs.get("group_id") or "")
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
-        stats = self.plugin._get_monthly_stats(self._stream_id, month_key)
+        stats = self.plugin._get_monthly_stats(real_group_id, month_key)
 
         if not stats:
             first_trigger = self.plugin.config.trigger.deer_pipe_record_words.strip() or "🦌"
@@ -154,7 +154,7 @@ class DeerRankCommand(BaseCommand):
             if image_base64:
                 await self.plugin.ctx.send.image(image_base64, self._stream_id)
                 return True, "已发送排行榜图表", 2
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             pass
 
         lines = [f"本月鹿管排行榜（{month_key}）", f"总次数：{total_count}", "─" * 20]
@@ -191,8 +191,9 @@ class DeerPersonalCommand(BaseCommand):
         if not user_id:
             return False, "无法识别用户身份", 0
 
+        real_group_id = str(self.kwargs.get("group_id") or "")
         image_base64 = await self.plugin._build_personal_heatmap_base64(
-            self._stream_id, user_id, nickname
+            real_group_id, user_id, nickname
         )
         if image_base64:
             await self.plugin.ctx.send.hybrid([
@@ -202,11 +203,18 @@ class DeerPersonalCommand(BaseCommand):
         else:
             now = datetime.now()
             month_key = now.strftime("%Y-%m")
-            stats = self.plugin._get_monthly_stats(self._stream_id, month_key)
+            stats = self.plugin._get_monthly_stats(real_group_id, month_key)
             user_data = stats.get(user_id)
             if user_data:
+                sorted_users = sorted(stats.items(), key=lambda x: x[1]["count"], reverse=True)
+                rank = next(i for i, (uid, _) in enumerate(sorted_users, 1) if uid == user_id)
+                streak = self.plugin._get_streak(real_group_id, user_id, month_key)["days"]
                 await self.plugin.ctx.send.text(
-                    f"{nickname} 本月鹿管 {user_data.get('count', 0)} 次（图表生成失败）",
+                    f"📊 {nickname} 本月🦌管统计\n"
+                    f"🦌 鹿管次数：{user_data['count']} 次\n"
+                    f"🏅 排名：第 {rank} 名（共 {len(stats)} 人）\n"
+                    f"🔥 最长连续打卡：{streak} 天\n"
+                    f"📅 活跃天数：{len(user_data['days'])} 天",
                     self._stream_id,
                 )
             else:
@@ -251,7 +259,8 @@ class DeerMonthlyCommand(BaseCommand):
             else:
                 return False, None, 0
 
-        return await self.plugin._handle_monthly_chart(self._stream_id, month_num)
+        real_group_id = str(self.kwargs.get("group_id") or "")
+        return await self.plugin._handle_monthly_chart(self._stream_id, real_group_id, month_num)
 
 
 # ═══ 鹿管插件主类 =====
@@ -295,14 +304,20 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             json.dump(records, f, ensure_ascii=False, indent=2)
 
     def _check_cooldown(self, group_id: str, user_id: str) -> tuple[bool, int]:
-        """检查用户是否在冷却期内。返回 (是否在冷却中, 距离上次记录的秒数)。"""
+        """检查用户是否在冷却期内。返回 (是否在冷却中, 距离上次记录的秒数)。
+
+        同时检查当前月和上个月的记录，防止跨月边界冷却失效。
+        """
         now = datetime.now()
-        month_key = now.strftime("%Y-%m")
         cooldown = timedelta(minutes=self.config.rate_limit.cooldown_minutes)
 
-        records = self._load_records(group_id, month_key)
+        # 合并当月和上月记录，找到最近一次打卡时间
+        month_key = now.strftime("%Y-%m")
+        prev_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+        all_records = self._load_records(group_id, month_key) + self._load_records(group_id, prev_month)
+
         last_ts = None
-        for r in records:
+        for r in all_records:
             if r.get("user_id") != user_id:
                 continue
             try:
@@ -394,8 +409,8 @@ class DeerPipeTablePlugin(MaiBotPlugin):
                 all_stats[uid]["days"].update(data["days"])
         return all_stats
 
-    def _get_streak(self, group_id: str, user_id: str) -> dict:
-        """计算用户在本月的最长连续打卡天数及加赛信息。
+    def _get_streak(self, group_id: str, user_id: str, month_key: str) -> dict:
+        """计算用户在指定月份的最长连续打卡天数及加赛信息。
 
         返回 dict:
             {"days": int,          # 最长连续天数，0 表示无记录
@@ -405,8 +420,6 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         内部加赛规则：同一用户有多段相同长度的最长连续时，
         取日期最近的那段（最后一天最晚的）。
         """
-        now = datetime.now()
-        month_key = now.strftime("%Y-%m")
         records = self._load_records(group_id, month_key)
 
         # 收集每天所有打卡时间
@@ -452,7 +465,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
             return {"days": 0, "last_day": 0, "earliest_ts": None}
         return {"days": best[0], "last_day": best[1], "earliest_ts": best[2]}
 
-    def _find_streak_king(self, group_id: str, stats: dict) -> tuple[str, int]:
+    def _find_streak_king(self, group_id: str, stats: dict, month_key: str) -> tuple[str, int]:
         """评选连续打卡王。返回 (昵称, 天数)。
 
         优先比较最长连续天数（降序）；天数相同时比较各自连续段
@@ -462,7 +475,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         king_info: dict = {"days": 0, "last_day": 0, "earliest_ts": None}
 
         for uid in stats:
-            info = self._get_streak(group_id, uid)
+            info = self._get_streak(group_id, uid, month_key)
             if info["days"] == 0:
                 continue
             if info["days"] > king_info["days"]:
@@ -663,7 +676,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         )
         return self._extract_base64(result)
 
-    async def _handle_monthly_chart(self, stream_id: str, month_num: int) -> Any:
+    async def _handle_monthly_chart(self, stream_id: str, group_id: str, month_num: int) -> Any:
         """统一处理月度图表生成与发送。"""
         if not stream_id:
             return False, "无法获取聊天流信息", 0
@@ -677,13 +690,13 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         year = now.year if month_num <= now.month else now.year - 1
         month_key = f"{year}-{month_num:02d}"
 
-        stats = self._get_monthly_stats(stream_id, month_key)
+        stats = self._get_monthly_stats(group_id, month_key)
         if not stats:
             await self.ctx.send.text(f"📊 {month_key} 还没有🦌管记录哦～", stream_id)
             return True, "指定月份无记录", 2
 
         # 生成图表
-        image_base64 = await self._generate_full_report(stream_id, month_key, stats)
+        image_base64 = await self._generate_full_report(group_id, month_key, stats)
         if image_base64:
             await self.ctx.send.image(image_base64, stream_id)
             return True, f"已发送 {month_key} 🦌管月表", 2
@@ -735,7 +748,7 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         try:
             hourly = self._get_hourly_distribution(group_id, month_key)
             best_day = self._get_daily_max(group_id, month_key)
-            streak_king_name, streak_king_count = self._find_streak_king(group_id, stats)
+            streak_king_name, streak_king_count = self._find_streak_king(group_id, stats, month_key)
             all_time = self._get_all_time_stats(group_id)
             all_time_sorted = sorted(all_time.items(), key=lambda x: x[1]["count"], reverse=True)
 

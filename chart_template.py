@@ -296,7 +296,7 @@ def build_full_report(
 ) -> str:
     """构建月度完整报告 HTML（X月鹿表用）。
 
-    包含：每日活跃热力图 + Top 10 柱状图 + 趣味统计 + 历史总榜。
+    包含：每日活跃人数热力图 + Top 10 柱状图 + 趣味统计 + 历史总榜。
 
     Args:
         month_key: 月份标识。
@@ -451,7 +451,7 @@ body.dark .heatmap-cell.empty {{ background-color:transparent; }}
     <p>总次数：{total} | 参与人数：{len(stats)} 人</p>
 </div>
 
-<div class="section-title">📅 每日活跃热力图</div>
+<div class="section-title">📅 每日活跃人数热力图</div>
 <div class="weekday-row">
     <div class="weekday">一</div><div class="weekday">二</div><div class="weekday">三</div>
     <div class="weekday">四</div><div class="weekday">五</div><div class="weekday">六</div><div class="weekday">日</div>
