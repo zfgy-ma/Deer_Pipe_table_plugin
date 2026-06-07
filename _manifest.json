@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "id": "com.zfgy.deer-pipe-table",
+  "id": "github.zfgy.deer-pipe-table",
   "version": "1.4.0",
   "name": "鹿管记录插件",
   "description": "记录群成员鹿管次数，生成月度图表和排行榜",
