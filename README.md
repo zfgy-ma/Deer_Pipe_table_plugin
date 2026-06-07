@@ -27,12 +27,12 @@ Deer_Pipe_table_plugin/
 |---|------|------|-----------|
 | 1 | [文件路径展示](#1-文件路径展示) | 项目目录结构与文件说明 | — |
 | 2 | [触发词自定义](#2-触发词自定义) | 修改各功能触发关键词 | WebUI 配置 |
-| 3 | [🦌 核心功能](#3-🦌-核心功能记录打卡) | 发送触发词记录打卡 | `🦌` |
+| 3 | [🦌 记录打卡](#3-🦌-记录打卡) | 发送触发词记录打卡 | `🦌` |
 | 4 | [🦌 排名系统](#4-🦌-排名系统) | 本月鹿管王 Top 10 排行 | `🦌排名` |
 | 5 | [我的🦌 个人数据](#5-我的🦌-个人数据中心) | 查看个人热力图与统计 | `我的🦌` |
 | 6 | [🦌 表月报](#6-🦌-表月度报告) | 月度完整报告图表 | `🦌表` |
 | 7 | [定时夜间模式](#7-定时夜间模式) | 图表暗色主题自动切换 | 21:00~07:00 |
-| 8 | [自定义冷却时间](#8-自定义冷却时间) | 打卡间隔限制 | 1440 分钟（24小时） |
+| 8 | [自定义冷却时间](#8-自定义冷却时间) | 打卡间隔限制 | 120 分钟（2小时） |
 | 9 | [自定义回复句](#9-自定义回复句) | 冷却期提示文案 | 可配置 |
 | 10 | [数据保留策略](#10-数据保留策略) | 旧数据自动清理 | 保留 2 个月 |
 | 11 | [白名单群管理](#11-白名单群管理) | 限定生效群聊 | 留空=所有群 |
@@ -78,7 +78,7 @@ Deer_Pipe_table_plugin/
 
 ---
 
-### 3. 🦌 核心功能：记录打卡
+### 3. 🦌 记录打卡
 
 群成员发送纯触发词（默认 `🦌`）时，系统自动记录一次打卡。
 
@@ -92,12 +92,23 @@ Deer_Pipe_table_plugin/
 **成功回复示例**：
 
 > 记录成功！本月第 15 次 🦌
-> [个人热力图图片白日模式]
-> [个人热力图图片黑夜模式]
+
+ <table border="0">
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/zfgy-ma/Image_Gallery/refs/heads/main/Deer_Pipe_table_plugin_image/build_personal_heatmap(daytime).png" width="200" alt="鹿管足迹（日间）"/><br/>
+      <sub>鹿管足迹（日间）</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/zfgy-ma/Image_Gallery/refs/heads/main/Deer_Pipe_table_plugin_image/build_personal_heatmap(night).png" width="200" alt="鹿管足迹（夜间）"/><br/>
+      <sub>鹿管足迹（夜间）</sub>
+    </td>
+  </tr>
+</table>
 
 **冷却期回复示例**：
 
-> 注意身体，歇会儿吧！（每 1440 分钟只能记录一次哦）
+> 注意身体，歇会儿吧！（每 120 分钟只能记录一次哦）
 
 ---
 
@@ -111,10 +122,23 @@ Deer_Pipe_table_plugin/
 - 同时显示月度总打卡次数
 
 **展示方式**：
-1. 优先尝试生成柱状图图片（黄红渐变配色）
+1. 优先尝试生成排行榜图片（黄红渐变配色）
 2. 图片生成失败时降级为纯文本排行
 
 **图片示例**：
+
+ <table border="0">
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/zfgy-ma/Image_Gallery/refs/heads/main/Deer_Pipe_table_plugin_image/build_deer_pipe_rank_chart(daytime).png" width="200" alt="本月排行榜（日间）"/><br/>
+      <sub>本月排行榜（日间）</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/zfgy-ma/Image_Gallery/refs/heads/main/Deer_Pipe_table_plugin_image/build_deer_pipe_rank_chart(night).png" width="200" alt="本月排行榜（夜间）"/><br/>
+      <sub>本月排行榜（夜间）</sub>
+    </td>
+  </tr>
+</table>
 
 **文本降级示例**：
 
@@ -136,8 +160,7 @@ Deer_Pipe_table_plugin/
 发送触发词（默认 `我的🦌`）查看个人月度统计。
 
 **展示内容**：
-- 个人月度热力图（每日打卡次数着色）
-- 本周打卡回顾
+- 与[🦌 记录打卡](#3-🦌-记录打卡)一致
 - 图片生成失败时降级为文本统计
 
 **文本统计示例**：
@@ -160,13 +183,28 @@ Deer_Pipe_table_plugin/
 |------|------|------|
 | 基础词 | `🦌表` | 查询当前月 |
 | 上月/本月 | `上月🦌表`、`本月🦌表` | 查询上个月或当前月 |
-| 指定月份 | `🦌表 7月`、`🦌表7月` | 查询指定月份 |
+| 指定月份 | `🦌表 6月`、`🦌表6月` | 查询指定月份 |
 
 **报告包含四个区域**：
 1. **每日活跃热力图** — 整月每天打卡人数着色（黄→红 6 级）
 2. **Top 10 柱状图** — 本月鹿管王排行
 3. **趣味统计卡片** — 最活跃时段、单日最高、连续打卡王、参与人数
 4. **历史总榜 Top 5** — 所有月份累计排行
+
+**图片示例**:
+
+ <table border="0">
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/zfgy-ma/Image_Gallery/refs/heads/main/Deer_Pipe_table_plugin_image/build_full_report(daytime).png" width="200" alt="月度报告（日间）"/><br/>
+      <sub>月度报告（日间）</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/zfgy-ma/Image_Gallery/refs/heads/main/Deer_Pipe_table_plugin_image/build_full_report(night).png" width="200" alt="月度报告（夜间）"/><br/>
+      <sub>月度报告（夜间）</sub>
+    </td>
+  </tr>
+</table>
 
 > 月度报告有缓存机制：数据不变时直接返回缓存图片，数据变更后自动重新渲染。
 
@@ -196,8 +234,10 @@ Deer_Pipe_table_plugin/
 
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
-| `cooldown_minutes` | `1440` | 冷却时间（分钟），默认 1440 = 24 小时 |
-> 冷却期按**每人独立计算**，不同用户之间互不影响。跨月数据不共享冷却状态。---
+| `cooldown_minutes` | `120` | 冷却时间（分钟），默认 120 = 2 小时 |
+> 冷却期按**每人独立计算**，不同用户之间互不影响。跨月数据不共享冷却状态。
+
+---
 
 ### 9. 自定义回复句
 
@@ -209,7 +249,7 @@ Deer_Pipe_table_plugin/
 |------|--------|------|
 | `exceed_reply` | `注意身体，歇会儿吧！` | 超限时的回复内容 |
 
-> 回复会自动拼接冷却时长，例如：`注意身体，歇会儿吧！（每 24 分钟只能记录一次哦）`
+> 回复会自动拼接冷却时长，例如：`注意身体，歇会儿吧！（每 120 分钟只能记录一次哦）`
 
 ---
 
@@ -277,6 +317,9 @@ Deer_Pipe_table_plugin/
 ---
 
 ## ❓ 常见问题
+
+**Q：[IPC插件系统] [cap.render.html2png] 执行失败: 启动本地浏览器失败？**
+A: 运行`uv run playwright install-deps`为自动化浏览器安装运行所需的全部操作系统级系统依赖
 
 **Q：修改触发词后不生效？**
 A：触发词修改后需要**重启插件**才能生效（因为命令正则模式在插件加载时构建）。

@@ -4,22 +4,16 @@
   "version": "1.4.0",
   "name": "鹿管记录插件",
   "description": "记录群成员鹿管次数，生成月度图表和排行榜",
-  "plugin_type": "tool",
-  "display": {
-    "icon": {
-      "type": "emoji",
-      "value": "🦌",
-      "fallback": "bar-chart-3",
-      "background": "#f59e0b"
-    }
-  },
   "author": {
     "name": "追风观影",
     "url": "https://github.com/zfgy-ma"
   },
   "license": "GPL-3.0-or-later",
   "urls": {
-    "repository": "https://github.com/zfgy-ma/My_Blog"
+    "repository": "https://github.com/zfgy-ma/Deer_Pipe_table_plugin",
+    "homepage": "https://github.com/zfgy-ma/Deer_Pipe_table_plugin",
+    "documentation": "https://github.com/zfgy-ma/Deer_Pipe_table_plugin/blob/main/README.md",
+    "issues": "https://github.com/zfgy-ma/Deer_Pipe_table_plugin/issues"
   },
   "host_application": {
     "min_version": "1.0.0",
@@ -38,6 +32,7 @@
     "config.get"
   ],
   "i18n": {
-    "default_locale": "zh-CN"
+    "default_locale": "zh-CN",
+    "supported_locales": ["zh-CN"]
   }
 }
