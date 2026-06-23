@@ -53,7 +53,7 @@ Deer_Pipe_table_plugin/
 | `plugin.py` | 插件主逻辑：4 个命令组件、数据读写、限频检查、图表生成调度 |
 | `chart_template.py` | 纯 HTML/CSS 模板，生成热力图、柱状图和完整报告，无外部依赖 |
 
-数据文件按 `{QQ群号}_{YYYY-MM}.json` 命名，例如群 `123456789` 在 2026 年 6 月的数据文件为 `data/123456789_2026-06.json`。
+数据文件按 `{QQ群号}_{YYYY-MM}.json` 命名，例如群 `123456` 在 2026 年 6 月的数据文件为 `data/123456789_2026-06.json`。
 
 ---
 
@@ -328,6 +328,9 @@ Deer_Pipe_table_plugin/
 
 **Q：[IPC插件系统] [cap.render.html2png] 执行失败: 启动本地浏览器失败？**
 A: 运行`uv run playwright install-deps`为自动化浏览器安装运行所需的全部操作系统级系统依赖
+
+**Q：中文字体显示异常（方框）**
+A：手动安装文泉驿正黑（WenQuanYi Zen Hei）或其他中文字体；具体解决方法：[issue #1](https://github.com/zfgy-ma/Deer_Pipe_table_plugin/issues/1#issuecomment-4776382816)
 
 **Q：修改触发词后不生效？**
 A：触发词修改后需要**重启插件**才能生效（因为命令正则模式在插件加载时构建）。
