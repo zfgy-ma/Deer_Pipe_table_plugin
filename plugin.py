@@ -43,6 +43,33 @@ def _get_hour_label(hour: int) -> str:
     return HOUR_LABELS[index]
 
 
+def _record_trigger_words(raw: str) -> list[str]:
+    """Parse comma-separated literal aliases, removing blanks and duplicates."""
+    return list(dict.fromkeys(
+        word.strip() for word in re.split(r"[,，]", raw) if word.strip()
+    ))
+
+
+def _record_command_pattern(raw: str) -> str:
+    """Match exactly one configured alias; an empty list matches nothing."""
+    words = _record_trigger_words(raw)
+    if not words:
+        return r"(?!)"
+    return r"\A(?:" + "|".join(re.escape(word) for word in words) + r")\Z"
+
+
+def _monthly_command_pattern(raw: str) -> str:
+    """Apply all existing month forms to each literal comma-separated alias."""
+    words = _record_trigger_words(raw)
+    if not words:
+        return r"(?!)"
+    aliases = "(?:" + "|".join(re.escape(word) for word in words) + ")"
+    return (
+        rf"\A(?:上月{aliases}|本月{aliases}"
+        rf"|{aliases}\s*(?P<m>\d{{1,2}})月|{aliases})\Z"
+    )
+
+
 # ═══ Command 组件类 =====
 
 
@@ -129,7 +156,9 @@ class DeerRankCommand(BaseCommand):
         stats = self.plugin._get_monthly_stats(real_group_id, month_key)
 
         if not stats:
-            first_trigger = self.plugin.config.trigger.deer_pipe_record_words.strip() or "🦌"
+            first_trigger = next(
+                iter(_record_trigger_words(self.plugin.config.trigger.deer_pipe_record_words)), "🦌"
+            )
             await self.plugin.ctx.send.text(
                 f"本月还没有鹿管记录哦～\n发送 {first_trigger} 来记录吧！", self._stream_id
             )
@@ -218,7 +247,9 @@ class DeerPersonalCommand(BaseCommand):
                     self._stream_id,
                 )
             else:
-                first_trigger = self.plugin.config.trigger.deer_pipe_record_words.strip() or "🦌"
+                first_trigger = next(
+                    iter(_record_trigger_words(self.plugin.config.trigger.deer_pipe_record_words)), "🦌"
+                )
                 await self.plugin.ctx.send.text(
                     f"{nickname or '你'} 本月还没有鹿管记录哦～\n发送 {first_trigger} 来记录吧！",
                     self._stream_id,
@@ -245,12 +276,12 @@ class DeerMonthlyCommand(BaseCommand):
             return False, None, 0
 
         raw_text = str(self.kwargs.get("text") or "").strip()
-        trigger = self.plugin.config.trigger.deer_pipe_monthly_words
+        triggers = _record_trigger_words(self.plugin.config.trigger.deer_pipe_monthly_words)
 
         now = datetime.now()
-        if raw_text == f"上月{trigger}":
+        if any(raw_text == f"上月{trigger}" for trigger in triggers):
             month_num = now.month - 1 if now.month > 1 else 12
-        elif raw_text == f"本月{trigger}" or raw_text == trigger:
+        elif raw_text in triggers or any(raw_text == f"本月{trigger}" for trigger in triggers):
             month_num = now.month
         else:
             m_str = self.matched_groups.get("m")
@@ -573,15 +604,10 @@ class DeerPipeTablePlugin(MaiBotPlugin):
         _personal = cfg.deer_pipe_personal_words
         _monthly = cfg.deer_pipe_monthly_words
 
-        DeerRecordCommand.command_pattern = rf"^{re.escape(_record)}$"
-        DeerRankCommand.command_pattern = rf"^{re.escape(_rank)}$"
-        DeerPersonalCommand.command_pattern = rf"^{re.escape(_personal)}$"
-        DeerMonthlyCommand.command_pattern = (
-            rf"^(?:上月{re.escape(_monthly)}"
-            rf"|本月{re.escape(_monthly)}"
-            rf"|{re.escape(_monthly)}\s*(?P<m>\d{{1,2}})月"
-            rf"|{re.escape(_monthly)})$"
-        )
+        DeerRecordCommand.command_pattern = _record_command_pattern(_record)
+        DeerRankCommand.command_pattern = _record_command_pattern(_rank)
+        DeerPersonalCommand.command_pattern = _record_command_pattern(_personal)
+        DeerMonthlyCommand.command_pattern = _monthly_command_pattern(_monthly)
 
         components = super().get_components()
         components = [c for c in components if c.get("type") != "command"]
