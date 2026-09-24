@@ -113,16 +113,16 @@ class TriggerSection(PluginConfigBase):
     )
     deer_pipe_record_words: str = Field(
         default="🦌",
-        description="鹿管记录触发词。消息完全等于该词时记录一次。",
+        description="鹿管记录触发词，多个词用英文或中文逗号分隔。完整匹配任一词时记录一次。",
         json_schema_extra={
             "label": "记录触发词",
-            "hint": "消息完全等于该词时记录一次鹿管。默认值：🦌",
+            "hint": "多个词用 , 或 ， 分隔，完整匹配任一词时记录一次；空项忽略。默认值：🦌",
             "placeholder": "🦌",
             "i18n": _schema_i18n(
                 label_en="Record trigger word",
                 label_ja="記録トリガーワード",
-                hint_en="A message exactly matching this word records a check-in. Default: 🦌",
-                hint_ja="この単語と完全一致するメッセージでチェックインを記録。デフォルト: 🦌",
+                hint_en="Separate aliases with , or ，. An exact match records a check-in; empty entries are ignored. Default: 🦌",
+                hint_ja="複数の単語は , または ， で区切ります。いずれかと完全一致すると記録。空項目は無視。デフォルト: 🦌",
             ),
             "order": 1,
         },
@@ -144,16 +144,16 @@ class TriggerSection(PluginConfigBase):
     )
     deer_pipe_rank_words: str = Field(
         default="🦌排名",
-        description="排行榜查询触发词。",
+        description="排行榜查询触发词，多个词用英文或中文逗号分隔。",
         json_schema_extra={
             "label": "排行触发词",
-            "hint": "消息完全等于该词时查询本月排行榜。默认值：🦌排名",
+            "hint": "多个词用 , 或 ， 分隔，完整匹配任一词时查询本月排行榜；空项忽略。默认值：🦌排名",
             "placeholder": "🦌排名",
             "i18n": _schema_i18n(
                 label_en="Leaderboard trigger word",
                 label_ja="ランキングトリガーワード",
-                hint_en="Message exactly matching this word queries the leaderboard. Default: 🦌排名",
-                hint_ja="この単語と完全一致するメッセージでランキングを表示。デフォルト: 🦌排名",
+                hint_en="Separate aliases with , or ，. An exact match queries the leaderboard; empty entries are ignored. Default: 🦌排名",
+                hint_ja="複数の単語は , または ， で区切ります。いずれかと完全一致するとランキングを表示。空項目は無視。デフォルト: 🦌排名",
             ),
             "order": 3,
         },
@@ -175,16 +175,16 @@ class TriggerSection(PluginConfigBase):
     )
     deer_pipe_personal_words: str = Field(
         default="我的🦌",
-        description="个人统计查询触发词。",
+        description="个人统计查询触发词，多个词用英文或中文逗号分隔。",
         json_schema_extra={
             "label": "个人统计触发词",
-            "hint": "消息完全等于该词时查询个人本月统计。默认值：我的🦌",
+            "hint": "多个词用 , 或 ， 分隔，完整匹配任一词时查询个人本月统计；空项忽略。默认值：我的🦌",
             "placeholder": "我的🦌",
             "i18n": _schema_i18n(
                 label_en="Personal stats trigger word",
                 label_ja="個人統計トリガーワード",
-                hint_en="Message matching this word queries personal monthly stats. Default: 我的🦌",
-                hint_ja="この単語と一致するメッセージで個人月間統計を表示。デフォルト: 我的🦌",
+                hint_en="Separate aliases with , or ，. An exact match queries personal monthly stats; empty entries are ignored. Default: 我的🦌",
+                hint_ja="複数の単語は , または ， で区切ります。いずれかと完全一致すると個人月間統計を表示。空項目は無視。デフォルト: 我的🦌",
             ),
             "order": 5,
         },
@@ -206,16 +206,16 @@ class TriggerSection(PluginConfigBase):
     )
     deer_pipe_monthly_words: str = Field(
         default="🦌表",
-        description="月度图表基础词。支持「上月X」「本月X」「X N月」格式。",
+        description="月度图表基础词，多个词用英文或中文逗号分隔。每个词支持「上月X」「本月X」「X N月」格式。",
         json_schema_extra={
             "label": "月表触发词",
-            "hint": "月表命令的基础词。支持格式：鹿表 / 鹿表7月 / 上月鹿表 / 本月鹿表。默认值：🦌表",
+            "hint": "多个基础词用 , 或 ， 分隔；空项忽略。每个词支持：鹿表 / 鹿表7月 / 上月鹿表 / 本月鹿表。默认值：🦌表",
             "placeholder": "🦌表",
             "i18n": _schema_i18n(
                 label_en="Monthly report trigger word",
                 label_ja="月間レポートトリガーワード",
-                hint_en="Base word for monthly report. Supports: 鹿表, 鹿表7月, 上月鹿表, 本月鹿表. Default: 🦌表",
-                hint_ja="月間レポートの基本単語。形式: 鹿表, 鹿表7月, 上月鹿表, 本月鹿表。デフォルト: 🦌表",
+                hint_en="Separate base words with , or ，; empty entries are ignored. Each supports: 鹿表 / 鹿表7月 / 上月鹿表 / 本月鹿表. Default: 🦌表",
+                hint_ja="基本単語を , または ， で区切ります。空項目は無視。各単語の形式: 鹿表 / 鹿表7月 / 上月鹿表 / 本月鹿表。デフォルト: 🦌表",
             ),
             "order": 7,
         },
